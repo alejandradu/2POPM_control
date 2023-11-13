@@ -62,7 +62,6 @@ class NIDaq:
             nb_timepoints: int,
             scan_step: float,
             stage_scan_range: float,
-            *,
             vertical_pixels: int = 2048,    # unit: pixels, number of pixels along the vertical direction
             num_samples: int = 20,  # for timing
             offset_view1: float  = 1550,   # unit: um, offset needed for view1
