@@ -37,17 +37,17 @@ class NIDaq:
     ch_ctr2 = "cDAQ1/_ctr2"  # idle
     ch_ctr3 = "cDAQ1/_ctr3"  # idle
 
-    PFI0 = "/cDAQ1/PFI0"  # camera exposure input - CONTROL 1
-    PFI1 = "/cDAQ1/PFI1"    # idle
+    PFI0 = "/cDAQ1/PFI0"  # master camera exposure input - CONTROL 1
+    PFI1 = "/cDAQ1/PFI1"  # second camera exposure input - CONTROL 2
 
-    ch_dio0 = "cDAQ1DIO/port0/line0"  # 488 digital channel
-    ch_dio1 = "cDAQ1DIO/port0/line1"  # 561 digital channel
-    ch_dio2 = "cDAQ1DIO/port0/line2"  # bright field
-    ch_dio3 = "cDAQ1DIO/port0/line3"  # idle
-    ch_dio4 = "cDAQ1DIO/port0/line4"  # idle
-    ch_dio5 = "cDAQ1DIO/port0/line5"  # idle
-    ch_dio6 = "cDAQ1DIO/port0/line6"  # idle
-    ch_dio7 = "cDAQ1DIO/port0/line7"  # idle
+    # ch_dio0 = "cDAQ1DIO/port0/line0"  # 488 digital channel
+    # ch_dio1 = "cDAQ1DIO/port0/line1"  # 561 digital channel
+    # ch_dio2 = "cDAQ1DIO/port0/line2"  # bright field
+    # ch_dio3 = "cDAQ1DIO/port0/line3"  # idle
+    # ch_dio4 = "cDAQ1DIO/port0/line4"  # idle
+    # ch_dio5 = "cDAQ1DIO/port0/line5"  # idle
+    # ch_dio6 = "cDAQ1DIO/port0/line6"  # idle
+    # ch_dio7 = "cDAQ1DIO/port0/line7"  # idle
 
     # constants
     MAX_VOL = 10  # unit: v, maximum voltage of the ao channels
@@ -249,6 +249,7 @@ class NIDaq:
                 for i_ch in range(1): #range(len(channels)):  # change channel # run once
                     # set up the do channel
                     # digital signals to switch laser on/off
+                    # HOW? 
                     task_do.timing.cfg_samp_clk_timing(rate=self.sampling_rate,
                                                        source=self.ch_ctr0_internal_output,
                                                        sample_mode=nidaqmx.constants.AcquisitionType.CONTINUOUS)
@@ -455,7 +456,7 @@ if __name__ == "__main__":
 
     # daq_card.select_channel(561)
 
-    # daq_card.acquire_stacks(channels=[488], view=0)
+    daq_card.acquire_stacks(channels=[488], view=0)
     # daq_card.acquire_stacks(channels=[561], view=2)
     # daq_card.acquire_stacks(channels=[488, 561], view=0)
 

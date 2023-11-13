@@ -3,9 +3,8 @@ import nidaqmx.system
 import numpy as np
 import time
 
-# Create a workflow using the NI-DAQmx Python API to synchronize the 
-# acquisition of a camera with the generation of an analog signal to control a 
-# galvo mirror and digital signals to control 3 lasers. 
+# Test different ways of generating a custom analog output signal
+# Test basic nidaqmx functionality
 
 def generate_custom_signal(task, frequency, amplitude, duration):
     # Generate a time array for the signal
@@ -16,7 +15,9 @@ def generate_custom_signal(task, frequency, amplitude, duration):
 
     # Configure the analog output task
     task.ao_channels.add_ao_voltage_chan("Dev1/ao0", min_val=-10.0, max_val=10.0)
-    task.timing.cfg_samp_clk_timing(rate=frequency, active_edge=nidaqmx.constants.Edge.RISING, sample_mode=nidaqmx.constants.AcquisitionType.CONTINUOUS)
+    task.timing.cfg_samp_clk_timing(rate=frequency, 
+                                    active_edge=nidaqmx.constants.Edge.RISING, 
+                                    sample_mode=nidaqmx.constants.AcquisitionType.FINITE)
 
     # Write the custom analog output signal to the analog output channel
     task.write(analog_output_signal, auto_start=True)

@@ -37,10 +37,14 @@ class nidaq:
     di1 = "Dev1/port0/line1"   # laser 2
     di2 = "Dev1/port0/line2"   # LED
     di3 = "Dev1/port0/line3"
+    # create a dictironary for easy access
+    # TODO: change to representative names
+    dio = {"laser1": di0, "laser2": di1, "LED": di2, "di3": di3}
 
     # TODO: constants
 
-    def __init__(self):
+    def __init__(
+            self):
         """
         Initialize the NI-DAQmx system and create a task for each channel.
         """
@@ -52,12 +56,16 @@ class nidaq:
         """
         Create all analog output tasks (galvo)
         """
-        task_ao = nidaqmx.Task()
-        task_ao.ao_channels.add_ao_voltage_chan(channel, min_val=minV, max_val=maxV)
+        task_ao = nidaqmx.Task("AO")
+        task_ao.ao_channels.add_ao_voltage_chan(self.ao0, min_val=minV, max_val=maxV)
 
-    def _create do_task(self, cha)
-
-
-
-
+    def _create_do_task(self, *channels):
+        """
+        Create all digital output tasks (lasers)
+        # TODO: get numbers of laser channels, determine line grouping
+        *channels: tuple of strings, e.g. ("laser1", "laser2", "LED")
+        """
+        task_do = nidaqmx.Task("DO")
+        for chan in channels:
+            task_do.do_channels.add_do_chan(chan)
 
