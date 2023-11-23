@@ -27,7 +27,7 @@ class nidaq:
     # trigger/counter
     ctr0 = "Dev1/ctr0"    # stack counter
     ctr0_internal = "Dev1/ctr0InternalOutput"   # stack trigger
-    ctr1 = "Dev1/ctr1"
+    ctr1 = "Dev1/ctr1"    # mimic external camera trigger - pulse generation (in parallel for both)
     ctr1_internal = "Dev1/ctr1InternalOutput"
 
     # programmable function I/O (PFI lines)
@@ -122,21 +122,30 @@ class nidaq:
             raise ValueError("Invalid number of laser channels")
 
 
-    def _external_cam_trigger(self, n_cams: int):
-        """sends ONE TTL pulse to the cameras to start acquisition"""
-        task_do = nidaqmx.Task("cam_trigger")
-        task_do.do_channels.add_do_chan(self.do3)       # start cam1
-        if n_cams == 2:  task_do.do_channels.add_do_chan(self.do4)   # start cam2
-        # use the internal clock of the device
-        task_do.timing.cfg_samp_clk_timing(rate=1, sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=20)
+    # def _external_cam_trigger(self, n_cams: int):
+    #     """sends ONE TTL pulse to the cameras to start acquisition"""
+    #     task_do = nidaqmx.Task("cam_trigger")
+    #     task_do.do_channels.add_do_chan(self.do3)       # start cam1
+    #     if n_cams == 2:  task_do.do_channels.add_do_chan(self.do4)   # start cam2
+    #     # use the internal clock of the device
+    #     task_do.timing.cfg_samp_clk_timing(rate=1, sample_mode=nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=20)
 
-        data = [True, True] if n_cams == 2 else [True, True, False, False]
-        # TODO: figure out what data points are specifically read
+    #     data = [True, True] if n_cams == 2 else [True, True]*10
+    #     # TODO: figure out what data points are specifically read
 
-        # write TTL pulse - explicitly start later
-        task_do.write(data, auto_start=False)
+    #     # write TTL pulse - explicitly start later
+    #     task_do.write(data, auto_start=False)
         
-        return task_do
+    #     return task_do
+
+    def _external_cam_trigger(self, n_cams: int):
+        """sends ONE TTL (parallel) pulse to the cameras to start acquisition"""
+        task_ctr = nidaqmx.Task("cam_trigger")
+        task_ctr.co_channels.add_co_pulse_chan_freq(self.ctr1, idle_state=nidaqmx.constants.Level.LOW, freq=2.0, duty_cycle=0.5)
+        # use the internal clock of the device
+        task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=1)
+
+        return task_ctr
 
 
     def _internal_stack_trigger(self):
@@ -163,7 +172,7 @@ class nidaq:
         task_galvo = self._create_ao_task()
         data_galvo = self._get_ao_data()
         
-        # mimic external camera trigger
+        # mimic external camera trigger (ONE start trigger)
         acq_ctr = self._external_cam_trigger()
 
         # stack trigger
