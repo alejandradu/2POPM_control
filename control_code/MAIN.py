@@ -65,8 +65,8 @@ class nidaq:
         self.exposure_time = exposure_time
         self.num_stacks = num_stacks
         self.num_slices = 10  # HERE - timing purposes (max sample buffer of clock) - ALSO: 2D imaging = 1 slice
-        self.readout_time1 = self.READOUT_TIME_CAM1 * vertical_pixels / self.MAX_VERTICAL_PIXELS
-        self.readout_time2 = self.READOUT_TIME_CAM2 * vertical_pixels / self.MAX_VERTICAL_PIXELS
+        self.readout_time1 = 0.01 #self.READOUT_TIME_CAM1 * vertical_pixels / self.MAX_VERTICAL_PIXELS
+        self.readout_time2 = 0.01 #self.READOUT_TIME_CAM2 * vertical_pixels / self.MAX_VERTICAL_PIXELS
 
     @property
     def sampling_rate(self):
@@ -127,9 +127,11 @@ class nidaq:
         task_do = nidaqmx.Task("cam_trigger")
         task_do.do_channels.add_do_chan(self.do3)       # start cam1
         if n_cams == 2:  task_do.do_channels.add_do_chan(self.do4)   # start cam2
-        task_do.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=1)
+        # use the internal clock of the device
+        task_do.timing.cfg_samp_clk_timing(rate=1, sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=20)
 
-        data = [True, True] if n_cams == 2 else [True]
+        data = [True, True] if n_cams == 2 else [True, True, False, False]
+        # TODO: figure out what data points are specifically read
 
         # write TTL pulse - explicitly start later
         task_do.write(data, auto_start=False)
