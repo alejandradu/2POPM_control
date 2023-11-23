@@ -64,7 +64,7 @@ class nidaq:
         """
         self.exposure_time = exposure_time
         self.num_stacks = num_stacks
-        self.num_samples = 10  # HERE - timing purposes (max sample buffer of clock)
+        self.num_slices = 10  # HERE - timing purposes (max sample buffer of clock) - ALSO: 2D imaging = 1 slice
         self.readout_time1 = self.READOUT_TIME_CAM1 * vertical_pixels / self.MAX_VERTICAL_PIXELS
         self.readout_time2 = self.READOUT_TIME_CAM2 * vertical_pixels / self.MAX_VERTICAL_PIXELS
 
@@ -72,19 +72,22 @@ class nidaq:
     def sampling_rate(self):
         return self.num_stacks / self.exposure_time
 
-        # TODO: add all instance attributes, including properties
-        # TODO: make this specific to volumetric sampling or not - BOTH
-        pass
+    # TODO: clarify difference num_samples and nb_slices
 
     def _create_ao_task(self):
         """Create the analog output task for the galvo"""
         task_ao = nidaqmx.Task("AO")
         task_ao.ao_channels.add_ao_voltage_chan(self.ao0, min_val=self.MINV_GALVO, max_val=self.MAXV_GALVO)
+        return task_ao
+    
+        # TODO: potentially add driver of RF for AOTF
 
-    def _create_do_tasks(self):
-        pass
-    # return taskLight, taskCam
-
+    def _create_do_task(self):
+        task_do = nidaqmx.Task("DO")
+        task_do.do_channels.add_do_chan(self.do0)       # 488
+        task_do.do_channels.add_do_chan(self.do1)       # 561
+        # task_do.do_channels.add_do_chan(self.do2)       # LED (AOTF)
+        return task_do
 
     # TODO: get numbers of laser channels, determine line grouping
     # TODO: figure out the purpose of views
@@ -94,20 +97,29 @@ class nidaq:
         pass
 
         # TODO: determine if we can include here the function of the amplifier - VARIABLE PARAM
-        # TODO: verify that we don't want data generated in real time
-        # TODO: what is the readout time - 
-        # TODO: can (should?) all light sources be on at the same time?
-        # TODO: we only want the light sources on when the camera is acquiring?
+        # TODO: figure out offset - is it necessary to control the galvo?
 
-    def _get_do_data(self, *SOME_ARGS):
-        """Get the ndarray for the digital ouput of the light sources and cameras"""
-        # DIGITAL IS YES/NO SO WILL ONLY HAVE TRUE/FALSE
-        # TODO: do the 488 and 561 alternate, then leave the other in
-        # the background?
-        # TODO: what are the parameter that we typically want to control
-        # TODO: cover both cases of using one and 2 cameras? (most likely - 
-        # how to adjust the trigger? just leave one trigger and add readouts....)
-        pass
+    def _get_do_data(self, laser_channels: list, alternate: bool = False):
+        """Get the ndarray for the digital ouput of the light sources"""
+        if alternate:
+            pass
+        # HERE: ASSUMING SAME READOUT TIME, both light sources on at the same time
+        num_on_sample = round((self.exposure_time - self.readout_time1) * self.sampling_rate)
+        data = [True] * num_on_sample + [False] * (self.num_slices - num_on_sample)
+    
+        if len(laser_channels) == 1:  
+            return data
+        elif len(laser_channels) == 2:
+            if alternate:
+                data_off = round(len(data)/2) * [False]
+                data_on = (len(data) - len(data_off)) * [True]
+                return [data_off + data_on, data_on + data_off]
+            else:
+                return [data, data]
+        elif len(laser_channels) == 3:
+            pass  # figure out the AOTF
+        else:
+            raise ValueError("Invalid number of laser channels")
 
 
     def _external_cam_trigger(self, n_cams: int):
@@ -127,10 +139,10 @@ class nidaq:
 
     def _internal_stack_trigger(self):
         """triggers ao and do tasks for each volume stack"""
-        task_ctr = nidaqm.Task("stack_trigger")
+        task_ctr = nidaqmx.Task("stack_trigger")
         task_ctr.co_channels.add_co_pulse_chan_freq(self.ctr0,idle_state=nidaqmx.constants.Level.LOW,freq=self.sampling_rate)
         # set buffer size of the counter per stack
-        task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE,samps_per_chan=self.num_samples)
+        task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE,samps_per_chan=self.num_slices)
         # counter is activated when cam1 exposure goes up (once for each stack)
         task_ctr.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source=self.PFI0, trigger_edge=nidaqmx.constants.Slope.RISING)
         # new rising exposures will retrigger the counter
@@ -141,9 +153,9 @@ class nidaq:
 
     def acquire(self):
 
-        # get light source and camera control
-        task_light, task_cam = self._create_do_tasks()
-        data_light, data_cam = self._get_do_data()
+        # get light source control
+        task_light = self._create_do_task()
+        data_light = self._get_do_data()
 
         # get galvo control
         task_galvo = self._create_ao_tasks()
@@ -162,7 +174,6 @@ class nidaq:
         # rate is the max rate of the source
         task_galvo.timing.cfg_sample_clk_timing(rate=rate, sample_mode=mode, source=src)
         task_light.timing.cfg_sample_clk_timing(rate=rate, sample_mode=mode, source=src)
-        task_cam.timing.cfg_sample_clk_timing(rate=rate, sample_mode=mode, source=src)
 
         # activate start trigger: wait for external camera trigger
         stack_ctr.start()
@@ -170,13 +181,11 @@ class nidaq:
         for i in range(self.num_stacks):
             # write waveform data to channels
             task_galvo.write(data_galvo, auto_start=False)
-            task_cam.write(data_cam, auto_start=False)
             task_light.write(data_light, auto_start=False)
 
             # start tasks: start when stack_ctr starts
             task_galvo.start()
             task_light.start()
-            task_cam.start()
 
             if i == 0:
                 # start acquisition
@@ -184,7 +193,7 @@ class nidaq:
                 # Stop and clear the task
                 if acq_ctr.is_task_done():
                     acq_ctr.stop()
-                task.close()
+                acq_ctr.close()
 
             # POTENTIALLY include a wait until done here?
 
@@ -193,14 +202,12 @@ class nidaq:
 
             task_galvo.stop()
             task_light.stop()
-            task_cam.stop()
 
         # close remaining trigger
         stack_ctr.close()
         # close all tasks
         task_galvo.close()
         task_light.close()
-        task_cam.close()
 
 
 
