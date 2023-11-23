@@ -141,9 +141,9 @@ class nidaq:
     def _external_cam_trigger(self, n_cams: int):
         """sends ONE TTL (parallel) pulse to the cameras to start acquisition"""
         task_ctr = nidaqmx.Task("cam_trigger")
-        task_ctr.co_channels.add_co_pulse_chan_freq(self.ctr1, idle_state=nidaqmx.constants.Level.LOW, freq=2.0, duty_cycle=0.5)
+        task_ctr.co_channels.add_co_pulse_chan_freq(self.ctr1, idle_state=nidaqmx.constants.Level.LOW, freq=200.0, duty_cycle=0.5)
         # use the internal clock of the device
-        task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=1)
+        task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=200)
 
         return task_ctr
 
