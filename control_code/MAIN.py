@@ -158,7 +158,7 @@ class nidaq:
         data_light = self._get_do_data()
 
         # get galvo control
-        task_galvo = self._create_ao_tasks()
+        task_galvo = self._create_ao_task()
         data_galvo = self._get_ao_data()
         
         # mimic external camera trigger
