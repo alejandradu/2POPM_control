@@ -210,7 +210,7 @@ class NIDaq:
         data_ao = [self._get_ao_data(v) for v in views]  # different for each view due to different offsets
         data_do = self._get_do_data(channels)    # get the digital output data depending on the channels
 
-        # set up the counter for loop through a zstack
+        # set up the counter for loop through a zstack - this one just counts edges - no internal timing
         task_ctr_loop = nidaqmx.Task("counter0")
         ctr_loop = task_ctr_loop.ci_channels.add_ci_count_edges_chan(self.ch_ctr1, edge=nidaqmx.constants.Edge.RISING)
         ctr_loop.ci_count_edges_term = self.PFI0
@@ -241,9 +241,10 @@ class NIDaq:
                 task_ao.start()
                 for i_ch in range(1): #range(len(channels)):  # change channel # run once
                     # set up the do channel
-                    task_do.timing.cfg_samp_clk_timing(rate=self.sampling_rate,
+                    task_do.timing.cfg_samp_clk_timing(rate=self.sampling_rate, #HERE it is not telling to have sampling_rate ON TOP, but a formality since the sample clock is the external counter
                                                        source=self.ch_ctr0_internal_output,
                                                        sample_mode=nidaqmx.constants.AcquisitionType.CONTINUOUS)
+                    # HERE: so, really, ao and do are coordinated by the retriggerable counter, which is triggered by the camera
                     task_do.write(data_do)
                     task_do.start()
 

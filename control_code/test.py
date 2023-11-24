@@ -19,5 +19,6 @@ acq_ctr.close()
 # is able to SEND parallel pulses at fastest freq: 200 Hz
 
 # cam trigger works
+# TEST WITH BOTH INTERNALLY TRIGGERED: DOES THE IMAGE SHOW UP THE SAME?
 # coordination with AO OPM waveform (NO truncation) (bc MM will not use the nidaqhub anymore)
 # light stimulation - potentially USE THE SAME COUNTER BUT MAYBE INTRODUCE A DELAY

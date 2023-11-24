@@ -32,7 +32,7 @@ def generate_custom_signal(task, frequency, amplitude, duration, sampling_rate):
         # read_data = task.read(number_of_samples_per_channel=nidaqmx.constants.READ_ALL_AVAILABLE)
         # print(f'Read data: {read_data}')
 
-        # Run the task
+        # Explicitly start the task
         task.start()
 
         # Wait for the specified duration
@@ -54,5 +54,8 @@ if __name__ == "__main__":
     sampling_rate = 100.0 # Hz OF MY SAMPLING
 
     # Create a NIDAQmx task for analog output
-    with nidaqmx.Task() as task:
-        generate_custom_signal(task, frequency, amplitude, duration, sampling_rate)
+    # with nidaqmx.Task() as task:
+    #     generate_custom_signal(task, frequency, amplitude, duration, sampling_rate)
+
+    global_ctr = nidaqmx.Task("global_counter")
+    global_ctr.co_channels.add_co_pulse_chan_freq(self.ctr1, idle_state=nidaqmx.constants.Level.LOW, freq=self.sampling_rate)
