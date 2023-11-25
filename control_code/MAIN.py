@@ -2,15 +2,16 @@ import nidaqmx
 import nidaqmx.system
 import numpy as np
 import time
-import pco   # to get params
+import pco   
 
 # Create a workflow using the NI-DAQmx Python API to synchronize the 
 # acquisition of a camera with the generation of an analog signal to control a 
-# galvo mirror and digital signals to control 3 lasers. 
+# galvo mirror and digital signals to control 2 lasers and drive
+# the RF frequency of an AOTF. 
 
 
 class nidaq:
-    # Channel ports    
+    # Analog input/output only    
     ao0 = "Dev1/ao0"   # OPM galvo
     ao1 = "Dev1/ao1"   # AOTF
     ai0 = "Dev1/ai0"
@@ -25,47 +26,52 @@ class nidaq:
     ao7 = "Dev1/ao7"
 
     # trigger/counter
-    ctr0 = "Dev1/ctr0"    # stack counter
-    ctr0_internal = "Dev1/ctr0InternalOutput"   # stack trigger
-    ctr1 = "Dev1/ctr1"    # mimic external camera trigger - pulse generation (in parallel for both)
-    ctr1_internal = "Dev1/ctr1InternalOutput"
+    ctr1 = "Dev1/ctr1"                          # counter external camera trigger
+    ctr1_internal = "Dev1/ctr1InternalOutput"   # signal external camera trigger
+    ctr0 = "Dev1/ctr0"                          
+    ctr0_internal = "Dev1/ctr0InternalOutput"  
 
     # programmable function I/O (PFI lines)
-    PFI0 = "Dev1/PFI0"     # cam1 exposure input
-    PFI1 = "Dev1/PFI1"     # idle
+    PFI0 = "Dev1/PFI0"     
+    PFI1 = "Dev1/PFI1"   
 
     # Digital and timing I/O (not all)
     do0 = "Dev1/port0/line0"   # 488
     do1 = "Dev1/port0/line1"   # 561
     do2 = "Dev1/port0/line2"  
-    do3 = "Dev1/port0/line3"   
-    do4 = "Dev1/port0/line4"   
 
     # constants
     MAXV_GALVO = 5.0
     MINV_GALVO = 0.0
 
     # pco 4.2 CL
-    LINE_TIME_SLOW = 27.77e-6     # seconds
-    LINE_TIME_FAST = 9.76e-6      # seconds
-    READOUT_RATE_SLOW = 95.3e6    # pixels/second
-    READOUT_RATE_FAST = 272.3e6   # pixels/second
+    # readout time <= line time. line time is min interval between triggers
+    LINE_TIME_SLOW = 27.77e-6     # sec
+    LINE_TIME_FAST = 9.76e-6      # sec
+    READOUT_RATE_SLOW = 95.3e6    # px/sec
+    READOUT_RATE_FAST = 272.3e6   # px/sec
     MAX_FRAME_RATE_SLOW = 35      # fps
     MAX_FRAME_RATE_FAST = 100     # fps
-    SYS_DELAY = 4294967295e-9     # seconds
-    JITTER = 4294967295e-9        # seconds
-    MIN_EXP = 100e-6              # seconds
-    MAX_EXP = 10                  # seconds
+    SYS_DELAY = 1e-6     # sec CHECK
+    JITTER = 1e-6        # sec CHECK
+    MIN_EXP = 100e-6              # sec
+    MAX_EXP = 10.0                # sec
+    MAX_DELAY = 1.0               # sec
+    MIN_WIDTH = 40                # px
+    MAX_WIDTH = 2060              # px
+    MIN_HEIGHT = 16               # px
+    MAX_HEIGHT = 2048             # px
 
     def __init__(
             self, 
-            time_points: int,
-            time_points_interval: float,
-            exposure_time: float,
-            mode: str,                    # camera mode: "fast" or "slow"
-            multi_d: bool,                # 2D or 3D imaging
-            vertical_pixels: int,         # TODO: do we count vertically?
-            cam_trigger_delay = 0.0,      # extra delay to exposure after trigger
+            time_points: int,               # number of stacks
+            time_points_interval: float,    # time between stacks (ms)
+            exposure_time: float,           # ms
+            mode: str,                      # camera mode: "fast" or "slow"
+            multi_d: bool,                  # multidimensional acquisition
+            image_height = self.MAX_HEIGHT,   
+            image_width = self.MAX_WIDTH,
+            cam_trigger_delay = 0.0,        # exposure delay after trigger
             z_start = 0.0,
             z_end = 0.0,
             z_step = 0.0
@@ -76,11 +82,17 @@ class nidaq:
         self.time_points = time_points
         self.time_points_interval = time_points_interval
         self.exposure_time = exposure_time
-        self.cam_trigger_delay = cam_trigger_delay
         self.mode = mode
-        self.num_slices = 10  # HERE - timing purposes (max sample buffer of clock) - ALSO: 2D imaging = 1 slice
-        self.readout_time1 = 0.01 #self.READOUT_TIME_CAM1 * vertical_pixels / self.MAX_VERTICAL_PIXELS
-        self.readout_time2 = 0.01 #self.READOUT_TIME_CAM2 * vertical_pixels / self.MAX_VERTICAL_PIXELS
+        self.multi_d = multi_d
+        self.image_height = image_height
+        self.image_width = image_width
+        self.cam_trigger_delay = cam_trigger_delay
+        self.z_start = z_start
+        self.z_end = z_end
+        self.z_step = z_step
+        
+        # self.num_slices = 10  # HERE - timing purposes (max sample buffer of clock) - ALSO: 2D imaging = 1 slice
+       
 
     @property
     def num_stacks(self):
@@ -93,23 +105,6 @@ class nidaq:
     @property
     def stack_slices(self):
         return np.floor(self.z_end - self.z_start / self.z_step) + 1   # agrees with MM config
-
-    @property
-    def exposure_with_delay(self):
-        return self.RISE_SYS_DELAY + self.JITTER   # should be < 10 us (pco 4.2 CL)
-
-    @rising_delay.setter
-    def rising_delay(self, extra_delay):
-        self.rising_delay += extra_delay
-
-    @property
-    def falling_delay(self):
-        return self.FALL_SYS_DELAY + self.JITTER   # should be < 10 us (pco 4.2 CL)
-
-    @falling_delay.setter
-    def falling_delay(self, extra_delay):
-        self.falling_delay += extra_delay
-
 
     # TODO: clarify difference num_samples and nb_slices
 
@@ -126,11 +121,19 @@ class nidaq:
         else:
             return desc_dict, timing_dict
 
+    # STEPS:
+    # 1. get the sequence for cameras
+    # 2. write test for cameras
+    # 3. get waveform for galvo
+    # 4. write test for galvo
+    # 5. get waveform for AOTF
+    # 6. write test for AOTF
+
 
     def _wave_calc(self, time_points, interval, z_start, z_end, step_size):
         """Get waveform parameters for one stack"""
 
-        time_diff_triggers = self.rising_delay + self.falling_delay + self.exposure_time
+        time_diff_triggers = self.SYS_DELAY
 
         if self.mode == "fast":
             assert(freq <= self.MAX_FRAME_RATE_FAST / 1.001)
