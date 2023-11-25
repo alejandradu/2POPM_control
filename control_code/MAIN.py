@@ -40,9 +40,14 @@ class nidaq:
     do1 = "Dev1/port0/line1"   # 561
     do2 = "Dev1/port0/line2"  
 
-    # constants
+    # galvo
     MAXV_GALVO = 5.0
     MINV_GALVO = 0.0
+    
+    # AOTFnC-400.650-TN
+    MIN_RF = 74e6         # Hz
+    MAX_RF = 158e6        # Hz
+    MAX_RF_POWER = 0.15   # Watts
 
     # pco 4.2 CL
     LINE_TIME_SLOW = 27.77e-6     # sec
@@ -74,7 +79,7 @@ class nidaq:
             z_start = 0.0,
             z_end = 0.0,
             z_step = 0.0,
-            samples_per_cycle = 10          # sampling to write ao / do data
+            samples_per_cycle = 10          # sampling to write ao / do data. >= 2 by nyquist thm.
         ):
         """
         Initialize acquisition parameters and properties
@@ -143,8 +148,7 @@ class nidaq:
             return desc_dict, timing_dict
 
     # STEPS:
-    # 1. get the sequence for cameras
-    # 2. write test for cameras
+
     # 3. get waveform for galvo
     # 4. write test for galvo
     # 5. get waveform for AOTF
@@ -191,9 +195,14 @@ class nidaq:
         """Get the array data to write to the ao channel"""
         pass
 
-    def _get_ao_aotf_data(self):
-        """Get the array data to write to the ao channel"""
-        pass
+    def _get_ao_aotf_data(self, RF):
+        """Get the array data to drive the AOTF at RF frequency"""
+        total_t = max(self.frame_readout_time, self.exposure_time)
+        sample_points = np.arange(0, total_t, 1 / self.sampling_rate)
+        # 1.0 input modulation voltage is optimal - opto-electronic specs
+        analog_output_signal = 1.0 + np.sin(2 * np.pi * RF * sample_points)
+        
+        return analog_output_signal
 
     # TODO: determine if we can include here the function of the amplifier - VARIABLE PARAM
     # NOTE: currently there is a hardware trigger, keep it that way?
@@ -273,6 +282,10 @@ class nidaq:
 
         # activate exposure sampling trigger: wait for external camera trigger
         exp_ctr.start()
+        
+        # aotf ao signal frequency is very high - max AO clock is 20 MHZ - analog multiplier
+        
+        # could let aotf run "untimed here" and the brute force stop if we want to run continuously
 
         for i in range(self.time_points):
             # write waveform data to channels
