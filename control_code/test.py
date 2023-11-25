@@ -3,48 +3,71 @@ import MAIN
 import pco
 import time
 
-test = MAIN.nidaq(time_points = 5,
-                  time_points_interval= 0.0,
-                  exposure_time = 1e-3,
-                  mode = "fast",
-                  multi_d = True,
-                  cam_trigger_delay = 0.0)
+time_points = 300
+
+test = MAIN.nidaq(time_points = time_points,
+                  time_points_wait_time = 0.0,
+                  exposure_time = 25e-3,
+                  mode = "FAST",    # TODO: verify all the preset modes like this
+                  multi_d = False,
+                  cam_trigger_delay = 0.0,
+                  samples_per_cycle=50,
+                  rf_freq = 100.0)  # set this very low for testing
 
 
 # -------- Measure camera parameters
 
-sys_delay = test.get_cam_params("trigger system delay ns")
-sys_jitter = test.get_cam_params("trigger system jitter ns")
-frame_time = test.get_cam_params("frame time ns")
-print(sys_delay, sys_jitter, frame_time)
+# print(test.get_cam_params())
+# print(test.get_total_acq_time())
 
 # -------- Test external camera trigger
 
-# Parallel pulse generation: measure delay of EXP OUT matches sys delay + jitter
-# Imaging at fastest frame rate for given exposure time
-acq_ctr = test._external_cam_trigger()
-acq_ctr.start()
-acq_ctr.wait_until_done()
-acq_ctr.close()
+# NOTE: you have to set MM to Multicam = core cam so that trigger settings are applied to both
+# TODO: really verify the cam exp status pulses are synchronous
+
+#print("max fps: ", test._get_trigger_stack_freq())
+
+## Parallel pulse generation
+# loops = time_points if test.multi_d else 1
+
+# acq_ctr = test._external_cam_trigger()
+
+# for i in range(loops):
+#     # trigger camera for this stack
+#     acq_ctr.start()
+#     acq_ctr.wait_until_done(test.get_total_acq_time())   # arg of wait until done has to be changed
+#     acq_ctr.stop()
+#     # min time between stacks
+#     time.sleep(0.0) 
+    
+#      # TODO: measure system delay introduced with sleep and the start-stop at every iteration
+
+# # close remaining trigger
+# acq_ctr.close()
 
 # -------- Test internal exposure trigger
 
-# Connect cam EXP OUT to PFI0.
-# Connect picoscope (voltimeter) to ctr0 Output port.
 # Observe coordination: ctr0 Output and EXP OUT
 # Observe frequency (sampling rate) and number of samples from ctr0 Output
 
-exp_ctr = test._internal_exposure_trigger()
-exp_ctr.start()
-acq_ctr.start()
-acq_ctr.wait_until_done()
-acq_ctr.close()
-time.sleep(1 / test._get_trigger_stack_freq())  
-exp_ctr.close()
+# acq_ctr = test._external_cam_trigger()
+# exp_ctr = test._internal_exposure_trigger()
+
+# exp_ctr.start()
+# acq_ctr.start()
+# acq_ctr.wait_until_done(test.get_total_acq_time())
+# acq_ctr.stop()
+
+# exp_ctr.close()
+# acq_ctr.close()
 
 # -------- Test galvo waveform 
 
 # -------- Test AOTF waveform 
+
+# print(test._get_trigger_stack_freq())
+
+test.acquire()
 
 # -------- Test lasers digital signals
 
