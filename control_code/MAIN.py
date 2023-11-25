@@ -45,15 +45,14 @@ class nidaq:
     MINV_GALVO = 0.0
 
     # pco 4.2 CL
-    # readout time <= line time. line time is min interval between triggers
     LINE_TIME_SLOW = 27.77e-6     # sec
     LINE_TIME_FAST = 9.76e-6      # sec
     READOUT_RATE_SLOW = 95.3e6    # px/sec
     READOUT_RATE_FAST = 272.3e6   # px/sec
     MAX_FRAME_RATE_SLOW = 35      # fps
     MAX_FRAME_RATE_FAST = 100     # fps
-    SYS_DELAY = 1e-6     # sec CHECK
-    JITTER = 1e-6        # sec CHECK
+    SYS_DELAY = 1e-6     # sec MEASURE PRECISELY - THIS IS IMPORTANT - some say this is t_frame - t_exposure
+    JITTER = 1e-6        # sec MEASURE
     MIN_EXP = 100e-6              # sec
     MAX_EXP = 10.0                # sec
     MAX_DELAY = 1.0               # sec
@@ -69,16 +68,20 @@ class nidaq:
             exposure_time: float,           # ms
             mode: str,                      # camera mode: "fast" or "slow"
             multi_d: bool,                  # multidimensional acquisition
-            image_height = self.MAX_HEIGHT,   
-            image_width = self.MAX_WIDTH,
+            image_height = MAX_HEIGHT,   
+            image_width = MAX_WIDTH,
             cam_trigger_delay = 0.0,        # exposure delay after trigger
             z_start = 0.0,
             z_end = 0.0,
-            z_step = 0.0
+            z_step = 0.0,
+            samples_per_cycle = 10          # sampling to write ao / do data
         ):
         """
-        Initialize the NI-DAQmx system and create a task for each channel.
+        Initialize acquisition parameters and properties
         """
+        assert(exposure_time >= self.MIN_EXP and exposure_time <= self.MAX_EXP)
+        assert(cam_trigger_delay <= self.MAX_DELAY)
+        
         self.time_points = time_points
         self.time_points_interval = time_points_interval
         self.exposure_time = exposure_time
@@ -90,23 +93,41 @@ class nidaq:
         self.z_start = z_start
         self.z_end = z_end
         self.z_step = z_step
+        self.sampling_rate = samples_per_cycle / exposure_time
+        self.samples_per_cycle = samples_per_cycle
         
-        # self.num_slices = 10  # HERE - timing purposes (max sample buffer of clock) - ALSO: 2D imaging = 1 slice
-       
-
-    @property
-    def num_stacks(self):
-        pass
+        if mode == "FAST":
+            self.line_time = self.LINE_TIME_FAST
+            self.readout_rate = self.READOUT_RATE_FAST
+            self.max_frame_rate = self.MAX_FRAME_RATE_FAST
+        elif mode == "SLOW":
+            self.line_time = self.LINE_TIME_SLOW
+            self.readout_rate = self.READOUT_RATE_SLOW
+            self.max_frame_rate = self.MAX_FRAME_RATE_SLOW
+        else:
+            raise ValueError("Invalid camera mode")
+        
+        if self.image_height % 2 != 0:
+            raise ValueError("Image height should be an even number of pixels")
+        
+        self.frame_readout_time = (self.image_height * self.image_width / 2) / self.line_time
+        # NOTE: based on pg 14 general pco.camware manual. assumes 2 sensors
+    
     
     @property
-    def sampling_rate(self):
-        return self.num_stacks / self.exposure_time
+    def samples_per_cycle(self):
+        return self.samples_per_cycle
+    
+    
+    @samples_per_cycle.setter
+    def samples_per_cycle(self, new_samples):
+        self.samples_per_cycle = new_samples
+        
 
     @property
     def stack_slices(self):
-        return np.floor(self.z_end - self.z_start / self.z_step) + 1   # agrees with MM config
+        return np.floor((self.z_end - self.z_start) / self.z_step) + 1   # agrees with MM config
 
-    # TODO: clarify difference num_samples and nb_slices
 
     def get_cam_params(self, desc_property_key=None, timing_property_key=None):
         """Get parameters of PCO camera - close MM to call this function"""
@@ -130,17 +151,18 @@ class nidaq:
     # 6. write test for AOTF
 
 
-    def _wave_calc(self, time_points, interval, z_start, z_end, step_size):
-        """Get waveform parameters for one stack"""
+    def _get_trigger_stack_freq(self):
+        """Get external trigger frequency in rolling shutter mode """
 
-        time_diff_triggers = self.SYS_DELAY
+        if self.exposure_time >= self.frame_readout_time:
+            trigger_period = self.SYS_DELAY + self.JITTER + self.exposure_time + self.line_time + self.cam_trigger_delay
+        else:
+            trigger_period = self.SYS_DELAY + self.JITTER + self.line_time * (self.image_height / 2) + self.cam_trigger_delay
+        
+        # emphasis on *full frame* readout. line time >= readout line time. Use line time to be safe
+        # NOTE: that treatment takes you up to 95 fps (below max FPS)
 
-        if self.mode == "fast":
-            assert(freq <= self.MAX_FRAME_RATE_FAST / 1.001)
-        elif self.mode == "slow":
-            assert(freq <= self.MAX_FRAME_RATE_SLOW / 1.001)
-
-        return 1/time_diff_triggers
+        return np.floor(1/trigger_period)
 
 
     def _create_ao_task(self):
@@ -149,12 +171,18 @@ class nidaq:
         task_ao.ao_channels.add_ao_voltage_chan(self.ao0, min_val=self.MINV_GALVO, max_val=self.MAXV_GALVO)
         return task_ao
     
+        # TODO: have to consider both cases exp time > and < readout time (daxi only considers >)
         # TODO: potentially add driver of RF for AOTF
 
     def _create_do_task(self):
         task_do = nidaqmx.Task("DO")
         task_do.do_channels.add_do_chan(self.do0)       # 488
         task_do.do_channels.add_do_chan(self.do1)       # 561
+        
+        # TODO: have to consider both cases exp time > and < readout time (daxi only considers >)
+        # do not alternate
+        
+        
         return task_do
 
 
@@ -192,35 +220,32 @@ class nidaq:
 
     # NOTE: discussions have been around the lack of core timing - this would provide that 
     # TODO: params of freq need to agree w those of MM
-    def _external_cam_trigger(self, n_cams: int, freq):
-        """send parallel TTL pulses to the cameras"""
-
+    # TODO: try effect of different duty cycles
+    def _external_cam_trigger(self):
+        """generate TTL pulse train for parallel cam trigger"""
         task_ctr = nidaqmx.Task("cam_trigger")
-        # TODO: try effect of different duty cycles
-
-        task_ctr.co_channels.add_co_pulse_chan_freq(self.ctr1, idle_state=nidaqmx.constants.Level.LOW, freq=freq, duty_cycle=0.2)
+        task_ctr.co_channels.add_co_pulse_chan_freq(self.ctr1, idle_state=nidaqmx.constants.Level.LOW, 
+                                                    freq=self._get_trigger_stack_freq(), duty_cycle=0.2)
         # use the internal clock of the device
-        task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=200)
-
-        # TODO: makes this retriggerable with wait time of self.stack_interval
+        task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.stack_slices)
 
         return task_ctr
 
 
+    def _internal_exposure_trigger(self):  
+        """triggers ao and do tasks during each cam exposure"""
+        task_ctr = nidaqmx.Task("exposure_trigger")
+        task_ctr.co_channels.add_co_pulse_chan_freq(self.ctr0,idle_state=nidaqmx.constants.Level.LOW,freq=self.sampling_rate)
+        # set buffer size of the counter per stack
+        if self.exposure_time < self.frame_readout_time:
+            self.samples_per_cycle = self.sampling_rate * self.frame_readout_time
+        task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE,samps_per_chan=self.samples_per_cycle)
+        # counter is activated when cam1 exposure goes up
+        task_ctr.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source=self.PFI0, trigger_edge=nidaqmx.constants.Slope.RISING)
+        # new rising exposures will retrigger the counter
+        task_ctr.triggers.start_trigger.retriggerable = True
+        return task_ctr
 
-    # def _internal_stack_trigger(self):  
-    #     """triggers ao and do tasks for each volume stack"""
-    #     task_ctr = nidaqmx.Task("stack_trigger")
-    #     task_ctr.co_channels.add_co_pulse_chan_freq(self.ctr0,idle_state=nidaqmx.constants.Level.LOW,freq=self.sampling_rate)
-    #     # set buffer size of the counter per stack
-    #     task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE,samps_per_chan=self.num_slices)
-    #     # counter is activated when cam1 exposure goes up (once for each stack)
-    #     task_ctr.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source=self.PFI0, trigger_edge=nidaqmx.constants.Slope.RISING)
-    #     # new rising exposures will retrigger the counter
-    #     task_ctr.triggers.start_trigger.retriggerable = True
-    #     return task_ctr
-
-    # letting MM do the subsequent triggering would allow the failure to happen again - change the timer to a single timer - consider delay
 
     def acquire(self):
 
@@ -232,50 +257,46 @@ class nidaq:
         task_galvo = self._create_ao_task()
         data_galvo = self._get_ao_data()
         
-        # mimic external camera trigger (ONE start trigger)
+        # master camera trigger
         acq_ctr = self._external_cam_trigger()
+        
+        # trigger for sampling within each exposure
+        exp_ctr = self._internal_exposure_trigger()
 
-        # stack trigger
-        # stack_ctr = self._internal_stack_trigger()
-
-        # sync ao and do tasks with stack counter clock
-        src = self.ctr1_internal
+        # sync ao and do tasks with exposure trigger clock 
+        src = self.ctr0_internal
         rate = self.sampling_rate
         mode = nidaqmx.constants.AcquisitionType.FINITE
         # rate is the max rate of the source
         task_galvo.timing.cfg_sample_clk_timing(rate=rate, sample_mode=mode, source=src)
         task_light.timing.cfg_sample_clk_timing(rate=rate, sample_mode=mode, source=src)
 
-        # activate start trigger: wait for external camera trigger
-        #stack_ctr.start()
+        # activate exposure sampling trigger: wait for external camera trigger
+        exp_ctr.start()
 
-        for i in range(self.num_stacks):
+        for i in range(self.time_points):
             # write waveform data to channels
             task_galvo.write(data_galvo, auto_start=False)
             task_light.write(data_light, auto_start=False)
 
-            # start tasks: start when stack_ctr starts
+            # start tasks: start when exp_ctr starts
             task_galvo.start()
             task_light.start()
 
-            if i == 0:
-                # start acquisition
-                acq_ctr.start()
-                # Stop and clear the task
-                if acq_ctr.is_task_done():
-                    acq_ctr.stop()
-                acq_ctr.close()
-
-            # POTENTIALLY include a wait until done here?
+            # trigger camera for this stack
+            acq_ctr.start()
+            acq_ctr.wait_until_done()
+            acq_ctr.stop()
 
             # time to write do and ao data in last slice
-            time.sleep(self.exposure_time + 0.1)  
+            time.sleep(1 / self._get_trigger_stack_freq())  
 
             task_galvo.stop()
             task_light.stop()
+            
 
         # close remaining trigger
-        #stack_ctr.close()
+        exp_ctr.close()
         # close all tasks
         task_galvo.close()
         task_light.close()
