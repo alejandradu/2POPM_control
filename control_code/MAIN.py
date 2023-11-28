@@ -102,7 +102,7 @@ class nidaq:
         self.z_end = z_end
         self.z_step = z_step
         self._sampling_rate = samples_per_cycle / exposure_time
-        self._samples_per_cycle = samples_per_cycle
+        self.samples_per_cycle = samples_per_cycle
         self.rf_freq = rf_freq
         
         if mode == "FAST":
@@ -122,15 +122,6 @@ class nidaq:
         self.frame_readout_time = (self.image_height * self.image_width ) / self.readout_rate
         # NOTE: based on pg 14 general pco.camware manual. assumes 2 sensors in lightsheet mode
     
-    
-    @property
-    def samples_per_cycle(self):
-        return self._samples_per_cycle
-    
-    
-    @samples_per_cycle.setter
-    def samples_per_cycle(self, new_samples):
-        self._samples_per_cycle = new_samples
 
     @property
     def sampling_rate(self):
@@ -175,24 +166,31 @@ class nidaq:
     def _get_trigger_stack_freq(self):
         """Get external trigger frequency in rolling shutter mode """
 
-        if self.exposure_time >= self.frame_readout_time:
-            trigger_period = self.exposure_time + self.cam_trigger_delay + self.line_time
-            # above would make sense: would make frame rate = 1 / exp time (w system delays)
-            # TODO: do we use lightsheet mode?  dwExposureLines*dwLineTime*(1000ˆdwTimebase)
-        else:
-            warnings.warn("Exposure time is less than readout time, using readout time as trigger period")
-            trigger_period = self.frame_readout_time + self.cam_trigger_delay
-            #trigger_period = self.SYS_DELAY + self.JITTER + self.line_time * (self.image_height / 2) + self.cam_trigger_delay
+        # if self.exposure_time >= self.frame_readout_time:
+        #     trigger_period = self.exposure_time + self.cam_trigger_delay + self.line_time
+        #     # above would make sense: would make frame rate = 1 / exp time (w system delays)
+        #     # TODO: do we use lightsheet mode?  dwExposureLines*dwLineTime*(1000ˆdwTimebase)
+        # else:
+        #     # warnings.warn("Exposure time is less than readout time, using readout time as trigger period")
+        #     #trigger_period = self.frame_readout_time + self.cam_trigger_delay
+        #     #trigger_period = self.exposure_time + self.cam_trigger_delay + self.line_time
+        #     trigger_period = 0.011  + self.line_time
+
+        trigger_period = self.exposure_time + self.cam_trigger_delay + self.line_time
 
         # NOTE: that treatment takes you up to 95 fps (below max FPS)
 
         return np.floor(1/trigger_period)
     
-    
-    def get_total_acq_time(self):
+
+    def get_stack_time(self):
         f = self._get_trigger_stack_freq()
-        stack_time = self.stack_slices / f
-        return stack_time * self.time_points + self.time_points_wait_time * (self.time_points - 1)
+        samps = self.stack_slices if self.multi_d else self.time_points
+        return samps / f
+    
+
+    def get_total_acq_time(self):
+        return self.get_stack_time() * self.time_points + self.time_points_wait_time * (self.time_points - 1)
 
 
     def _create_ao_task(self):
@@ -261,7 +259,8 @@ class nidaq:
         """generate TTL pulse train for parallel cam trigger"""
         task_ctr = nidaqmx.Task("cam_trigger")
         task_ctr.co_channels.add_co_pulse_chan_freq(self.ctr1, idle_state=nidaqmx.constants.Level.LOW, 
-                                                    freq=self._get_trigger_stack_freq(), duty_cycle=0.2)
+                                                    freq=self._get_trigger_stack_freq(), duty_cycle=0.50)
+        # DUTY CYCLE IS RELEVANT IF WE DO EXT EXP CONTROL
         # use the internal clock of the device
         samps = self.stack_slices if self.multi_d else self.time_points
         task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=samps)
@@ -275,8 +274,10 @@ class nidaq:
         task_ctr.co_channels.add_co_pulse_chan_freq(self.ctr0,idle_state=nidaqmx.constants.Level.LOW,freq=self.sampling_rate)
         # set buffer size of the counter per stack
         if self.exposure_time < self.frame_readout_time:
-            self.samples_per_cycle = self.sampling_rate * self.frame_readout_time
-        task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE,samps_per_chan=self.samples_per_cycle)
+            samps = int(self.sampling_rate * self.frame_readout_time)
+        else:
+            samps = self.samples_per_cycle
+        task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=samps)
         # counter is activated when cam1 exposure goes up
         task_ctr.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source=self.PFI0, trigger_edge=nidaqmx.constants.Slope.RISING)
         # new rising exposures will retrigger the counter
@@ -321,6 +322,8 @@ class nidaq:
         # adjust for 2D acquisition
         loops = self.time_points if self.multi_d else 1
 
+        stack_tot = self.get_stack_time()
+
         for i in range(loops):
             # write waveform data to channels
             # task_galvo.write(data_galvo, auto_start=False)
@@ -334,7 +337,7 @@ class nidaq:
 
             # trigger camera for this stack
             acq_ctr.start()
-            acq_ctr.wait_until_done(self.get_total_acq_time())
+            acq_ctr.wait_until_done(stack_tot)   # some extra time
             acq_ctr.stop()
 
             # min time between stacks

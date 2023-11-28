@@ -3,18 +3,19 @@ import MAIN
 import pco
 import time
 
-time_points = 300
+time_points = 600
 
 test = MAIN.nidaq(time_points = time_points,
                   time_points_wait_time = 0.0,
-                  exposure_time = 25e-3,
+                  # BASICALLY 100 FPS
+                  exposure_time = 0.011,#5e-3,  # the total cam "fake" exp time REAL ONE = FAKE * DUTY CYCLE IN EXP CTR MODE (+DELAY...)
                   mode = "FAST",    # TODO: verify all the preset modes like this
                   multi_d = False,
                   cam_trigger_delay = 0.0,
                   samples_per_cycle=50,
                   rf_freq = 100.0)  # set this very low for testing
 
-
+# TODO: fix weird behavior of duty cycle - test so that images are not corrupted (my guess this camera can do readout and exposure at the same time)
 # -------- Measure camera parameters
 
 # print(test.get_cam_params())
@@ -66,9 +67,25 @@ test = MAIN.nidaq(time_points = time_points,
 # -------- Test AOTF waveform 
 
 # print(test._get_trigger_stack_freq())
+# going to trigger at max frame rate w exp set to 5 (shouldn't matter) and duty cycle = 0.99, exp = around 0.1
 
 test.acquire()
 
 # -------- Test lasers digital signals
 
 # -------- Test full acquisition 
+
+# get cam params
+# cam1 = pco.Camera()
+# cam1.sdk.open_camera()
+# cam2 = pco.Camera()
+# cam2.sdk.open_next_camera()
+
+# print('exposure time: ', cam.sdk.get_delay_exposure_time())
+# print('frame rate: ', cam.sdk.get_frame_rate())
+# print('roi: ', cam.sdk.get_roi())
+# print('mode: ', cam.sdk.get_trigger_mode())
+# cam.sdk.set_trigger_mode('external exposure control')
+# print('mode: ', cam.sdk.get_trigger_mode())
+
+# test.acquire()
