@@ -250,12 +250,12 @@ class NIDaq:
 
                     task_ctr_loop.start()
                     counts = 0
+                    # counting the frames that the camera has taken
                     while counts < self.nb_slices + 1:  # Flash4.0 outputs 1 more pulse than asked
                         counts = task_ctr_loop.read()
                         time.sleep(0.005)  # wait time during loop
                     task_ctr_loop.stop()
                     print("counts: ", counts)
-                    # print("counts: ", counts)
                     time.sleep(self.exposure + 0.1)  # add time to allow ao and do output for the last frame
                     task_do.stop()
                     print("one stack done!")
