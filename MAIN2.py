@@ -62,8 +62,8 @@ class nidaq:
     def __init__(
             self, 
             num_stacks: int,                # number of 3D stacks if multi d, number of frames if not
-            stack_delay_time: float,        # ms. time between acquiring any 2 stacks
-            exposure_time: float,           # ms. effective exposure will be less due to system delay
+            stack_delay_time: float,        # s. time between acquiring any 2 stacks
+            exposure_time: float,           # s. effective exposure will be less due to system delay
             readout_mode: str,              # camera readout mode "fast" or "slow"
             lightsheet: bool,               # lightsheet mode
             multi_d: bool,                  # multidimensional acquisition
@@ -72,11 +72,11 @@ class nidaq:
             num_z_slices = 0,                       # TODO: is it more useful to have a step or a number of slices?
             image_height = MAX_HEIGHT,      # px. vertical ROI. Defines frame readout time
             image_width = MAX_WIDTH,        # px. horizontal ROI
-            frame_delay_time = 0.0,         # ms. optional delay after each frame trigger
+            frame_delay_time = 0.0,         # s. optional delay after each frame trigger
             samples_per_exp = 10,           # sampling to write data for each cam exposure >= 2 by nyquist thm.
             samples_per_stack = 10,         # sampling to write data for each stack
-            rf_freq = 1e6                   # RF frequency of AOTF
-        ):
+            rf_freq = 1e6,                   # RF frequency of AOTF
+            duty_cycle = 0.98):              # duty cycle of exposure trigger 
         
         if (exposure_time < self.MIN_EXP or exposure_time > self.MAX_EXP):
             raise ValueError("Exposure time is not between 100e-6 and 10.0 sec")
@@ -102,7 +102,7 @@ class nidaq:
             self.readout_rate = self.READOUT_RATE_SLOW
             self.max_full_frame_rate = self.MAX_FRAME_RATE_SLOW
         else:
-            raise ValueError("Invalid camera acquisition mode")
+            raise ValueError("Invalid camera readout mode")
         
         # assign user inputs
         self.num_stacks = num_stacks
@@ -120,10 +120,11 @@ class nidaq:
         self.samples_per_exp = samples_per_exp
         self.samples_per_stack = samples_per_stack
         self.rf_freq = rf_freq
+        self.duty_cycle = duty_cycle
         
         # conversion from z to galvo voltage
-        # TODO: check is 175 microm +20v range?
-        self.volt_per_z = 20 / 175 * self.SCALING_FACTOR
+        # TODO: check is 175 microm +20v range? or 10?
+        self.volt_per_z = 10 / 175 * self.SCALING_FACTOR
 
 
     @property
@@ -137,9 +138,9 @@ class nidaq:
     def _get_frame_time(self):
         """Get frame readout time: min time between camera triggers"""
         if not self.lightsheet:
-            return self.height * self.line_time / 2
+            return self.image_height * self.line_time / 2
         else:
-            return self.height * self.line_time
+            return self.image_height * self.line_time
         
         
     def _get_trigger_exp_freq(self):
@@ -250,16 +251,19 @@ class nidaq:
                                                     freq=1/self.get_stack_time(), duty_cycle=0.2)
         task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.num_stacks)
         
+        return task_ctr
+        
         
     def _cam_exposure_trigger(self):
         """generate TTL pulse train for parallel cam trigger"""
         task_ctr = nidaqmx.Task("cam_trigger")
         # duty cycle < 1.0 means the real exposure time is even less than input with rising delay
-        task_ctr.co_channels.add_co_pulse_chan_freq(self.ctr1, idle_state=nidaqmx.constants.Level.LOW, 
-                                                    freq=self._get_trigger_exp_freq(), duty_cycle=0.95)
+        task_ctr.co_channels.add_co_pulse_chan_freq(self.ctr1, idle_state=nidaqmx.constants.Level.LOW, freq=self._get_trigger_exp_freq(), duty_cycle=self.duty_cycle)
         # use the internal clock of the device
-        samps = self.frames_per_stack if self.multi_d else 1  # POT BUG
-        task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=samps)
+        if self.multi_d:
+            task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.frames_per_stack)
+        else:
+            task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=1)
         # trigger is activated when ctr0 goes up
         task_ctr.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source=self.ctr0_internal, trigger_edge=nidaqmx.constants.Slope.RISING)
         task_ctr.triggers.start_trigger.retriggerable = True
@@ -274,6 +278,8 @@ class nidaq:
         # data_light = self._get_do_data()
         
         # TODO: incorporate stack_delay_time in this logic (prob delay to stack_trigger)
+        # TODO: determine if we want to more precisely control exposure via duty cycle (seems the best, otherwise we
+        #      have to introduce a delay between frames - actually this is close to what i have)
 
         # master trigger
         stack_ctr = self._stack_trigger()
@@ -283,7 +289,7 @@ class nidaq:
             task_galvo = self._create_ao_task()
             data_galvo = self._get_ao_galvo_data()
             # cannot put src_galvo as src bc then it would sample at the rate of galvo triggers
-            task_galvo.timing.cfg_sample_clk_timing(rate=self.stack_sampling_rate, sample_mode=nidaqmx.constants.AcquisitionType.FINITE, 
+            task_galvo.timing.cfg_samp_clk_timing(rate=self.stack_sampling_rate, sample_mode=nidaqmx.constants.AcquisitionType.FINITE, 
                                                 samps_per_chan= self.samples_per_stack)
             # set start trigger
             task_galvo.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source=self.ctr0_internal, trigger_edge=nidaqmx.constants.Edge.RISING)
