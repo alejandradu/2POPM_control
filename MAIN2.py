@@ -75,7 +75,8 @@ class nidaq:
             frame_delay_time = 0.0,         # ms. optional delay after each frame trigger
             samples_per_exp = 10,           # sampling to write data for each cam exposure >= 2 by nyquist thm.
             samples_per_stack = 10,         # sampling to write data for each stack
-            rf_freq = 1e6                   # RF frequency of AOTF
+            rf_freq = 1e6,                  # RF frequency of AOTF
+            channels = [True, True, True]    # laser channels to turn in during acquisition (variable length) [488, 561, LED]
         ):
         
         if (exposure_time < self.MIN_EXP or exposure_time > self.MAX_EXP):
@@ -212,10 +213,14 @@ class nidaq:
         return task_ao
     
 
-    def _create_do_task(self):
+    def _create_simple_do_task(self):
         task_do = nidaqmx.Task("DO")
-        task_do.do_channels.add_do_chan(self.do0)       # 488
-        task_do.do_channels.add_do_chan(self.do1)       # 561     
+        if self.channels[0]:
+            task_do.do_channels.add_do_chan(self.do0)       # 488
+        if self.channels[1]:
+            task_do.do_channels.add_do_chan(self.do1)       # 561
+        if self.channels[2]:
+            task_do.do_channels.add_do_chan(self.do1)       # LED  
         
         return task_do
 
@@ -235,8 +240,14 @@ class nidaq:
         analog_output_signal = 1.0 + np.sin(2 * np.pi * self.rf_freq * sample_points)
         
         return analog_output_signal
+    
+    def _get_do_data(self):
+        """Get the array data to write to the do channel"""
+        
+        return [True] * self.samples_per_stack
+        
 
-    # TODO: determine if we can include here the function of the amplifier - VARIABLE PARAM
+    # TODO: revise the AOTF function - what would it need to sync with?
     # NOTE: currently there is a hardware trigger, keep it that way?
         
 # ------------------------------ TRIGGERS  ------------------------------- #
