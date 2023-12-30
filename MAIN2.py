@@ -76,7 +76,7 @@ class nidaq:
             samples_per_exp = 10,           # sampling to write data for each cam exposure >= 2 by nyquist thm.
             samples_per_stack = 10,         # sampling to write data for each stack
             rf_freq = 1e6,                  # RF frequency of AOTF
-            channels = [True, True, True]    # laser channels to turn in during acquisition (variable length) [488, 561, LED]
+            channels = [True, True, True],    # laser channels to turn in during acquisition (variable length) [488, 561, LED]
             duty_cycle = 0.98):              # duty cycle of exposure trigger 
         
         if (exposure_time < self.MIN_EXP or exposure_time > self.MAX_EXP):
