@@ -4,13 +4,12 @@ import numpy as np
 import time
 import pco   
 import warnings
+import PyQt6
 
 # Create a workflow using the NI-DAQmx Python API to synchronize the 
 # acquisition of a camera with the generation of an analog signal to control a 
 # galvo mirror and digital signals to control 2 lasers and drive
 # the RF frequency of an AOTF. 
-
-# TODO: the aotf module and the synchronization should be 2 different modules
 
 class nidaq:
     # Analog input/output only    
@@ -18,24 +17,23 @@ class nidaq:
     ao1 = "Dev1/ao1"   # AOTF / LED voltage modulator
 
     # trigger/counter
-    ctr1 = "Dev1/ctr1"                     # counter external camera trigger
-    ctr1_internal = "ctr1InternalOutput"   # signal external camera trigger
-    ctr0 = "Dev1/ctr0"                     # other trigger to sync the galvo
-    ctr0_internal = "ctr0InternalOutput"  
+    ctr1 = "Dev1/ctr1"                     # camera exposure pulses
+    ctr1_internal = "ctr1InternalOutput"   # idle
+    ctr0 = "Dev1/ctr0"                     # stack trigger
+    ctr0_internal = "ctr0InternalOutput"   # internal signal for stack trigger
 
     # programmable function I/O (PFI lines)
     PFI0 = "PFI0"
     PFI1 = "Dev1/PFI1"   
 
     # Digital and timing I/O (not all)
-    do0 = "Dev1/port0/line0"   # 488
-    do1 = "Dev1/port0/line1"   # 561
-    do2 = "Dev1/port0/line2"  
+    do0 = "Dev1/port0/line0"   # LED
+    do1 = "Dev1/port0/line1"   # 488
+    do2 = "Dev1/port0/line2"   # 561
 
     # galvo GVS011
-    MAXV_GALVO = 5.0   # or 10. ask
-    MINV_GALVO = 0.0
-    SCALING_FACTOR = 0.5   # 0.5 V/deg check (max 10V, 20 deg) 20 deg = 175 microm, 0 deg = 0 microm
+    MAXV_GALVO = 5.0  
+    MINV_GALVO = -5.0
     
     # AOTFnC-400.650-TN
     MIN_RF = 74e6         # Hz
@@ -62,22 +60,23 @@ class nidaq:
     def __init__(
             self, 
             num_stacks: int,                # number of 3D stacks if multi d, number of frames if not
-            stack_delay_time: float,        # s. time between acquiring any 2 stacks
+            stack_delay_time: float,        # s. time between acquiring any 2 stacks - TODO: match name in mm
             exposure_time: float,           # s. effective exposure will be less due to system delay
             readout_mode: str,              # camera readout mode "fast" or "slow"
             lightsheet: bool,               # lightsheet mode
             multi_d: bool,                  # multidimensional acquisition
-            z_start = 0.0,                  # microm. start of z stack
-            z_end = 0.0,                            # ASSUMING 175 nm = 20 deg
-            num_z_slices = 0,                       # TODO: is it more useful to have a step or a number of slices?
+            z_start = 0.0,                  # microm. start of z stack. min -178.36 
+            z_end = 0.0,                    # microm. end of z stack. max 178.36 
+            num_z_slices = 0,               # int. number of z slices
             image_height = MAX_HEIGHT,      # px. vertical ROI. Defines frame readout time
             image_width = MAX_WIDTH,        # px. horizontal ROI
             frame_delay_time = 0.0,         # s. optional delay after each frame trigger
             samples_per_exp = 10,           # sampling to write data for each cam exposure >= 2 by nyquist thm.
             samples_per_stack = 10,         # sampling to write data for each stack
             rf_freq = 1e6,                  # RF frequency of AOTF
-            channels = [True, True, True],    # laser channels to turn in during acquisition (variable length) [488, 561, LED]
-            duty_cycle = 0.98):              # duty cycle of exposure trigger 
+            channels = [True, True, True],  # laser channels to turn on during acquisition (variable length) [488, 561, LED]
+            led_fraction_on = 1.0,          # percent of time LED is on during acquisition for software triggering
+            led_trigger = None):            # "hardware" or "software" triggering of LED if light control is desired
         
         if (exposure_time < self.MIN_EXP or exposure_time > self.MAX_EXP):
             raise ValueError("Exposure time is not between 100e-6 and 10.0 sec")
@@ -91,20 +90,32 @@ class nidaq:
             raise ValueError("Image width is not between 40 and 2060 pixels")
         if (z_end < z_start):
             raise ValueError("z_end is smaller than z_start")
-        if (z_end > 175.0):
-            raise ValueError("z_end is greater than 175 microm")
+        if (z_end > 178.36 or z_start < -178.36):
+            raise ValueError("z_end and/or z_start are out of range [-178.36, 178.36]")
         
-        if readout_mode == "FAST":
+        if readout_mode == "fast":
             self.line_time = self.LINE_TIME_FAST
             self.readout_rate = self.READOUT_RATE_FAST
             self.max_full_frame_rate = self.MAX_FRAME_RATE_FAST
-        elif readout_mode == "SLOW":
+        elif readout_mode == "slow":
             self.line_time = self.LINE_TIME_SLOW
             self.readout_rate = self.READOUT_RATE_SLOW
             self.max_full_frame_rate = self.MAX_FRAME_RATE_SLOW
         else:
             raise ValueError("Invalid camera readout mode")
         
+        if led_trigger == "hardware":
+            print("LED hardware trigger selected. Verify BNC cable connects Cam Exp Out to LED In")
+        elif led_trigger == "software":
+            print("LED software trigger selected. Verify BNC cable connects USER1 OUT to LED In")
+        elif led_trigger is None:
+            print("No LED light control selected.")
+        else:
+            raise ValueError("Invalid LED trigger mode")
+        
+        if self.multi_d:
+            print("Stage (galvo) control enabled. Verify MicroManager NIDAQHub control is disabled.")
+                    
         # assign user inputs
         self.num_stacks = num_stacks
         self.stack_delay_time = stack_delay_time
@@ -121,11 +132,11 @@ class nidaq:
         self.samples_per_exp = samples_per_exp
         self.samples_per_stack = samples_per_stack
         self.rf_freq = rf_freq
-        self.duty_cycle = duty_cycle
+        self.led_fraction_on = led_fraction_on
+        self.led_trigger = led_trigger
         
-        # conversion from z to galvo voltage
-        # TODO: check is 175 microm +20v range? or 10?
-        self.volt_per_z = 10 / 175 * self.SCALING_FACTOR
+        # conversion from z to galvo voltage according to experimental calibration
+        self.volt_per_z = 5 / 178.36
 
 
     @property
@@ -156,15 +167,15 @@ class nidaq:
         
         
     @property
+    def duty_cycle(self):
+        """Get duty cycle of exposure trigger"""
+        return 0.98 - self.frame_delay_time * self._get_trigger_exp_freq()
+        
+        
+    @property
     def exp_sampling_rate(self):
         """Get sampling rate of output to write for each frame"""
         return self.samples_per_exp / self._get_frame_time()
-    
-    
-    @property
-    def stack_sampling_rate(self):
-        """Get sampling rate of output to write for each stack"""
-        return self.samples_per_stack / self.get_stack_time()
         
         
     @property
@@ -174,10 +185,16 @@ class nidaq:
         
         
     def get_stack_time(self):
-        """Get time to acquire a stack if 3D, or a frame if 2D"""
+        """Get time to acquire a stack if 3D, or a frame if 2D, including delay between stacks"""
         f = self._get_trigger_exp_freq()
         samps = self.frames_per_stack if self.multi_d else 1
-        return samps / f
+        return samps / f + self.stack_delay_time
+    
+    
+    @property
+    def stack_sampling_rate(self):
+        """Get sampling rate of output to write for each stack without delay time"""
+        return self.samples_per_stack / (self.get_stack_time() - self.stack_delay_time)
     
 
     def get_total_acq_time(self):
@@ -212,23 +229,10 @@ class nidaq:
         task_ao = nidaqmx.Task("AO")
         task_ao.ao_channels.add_ao_voltage_chan(self.ao0, min_val=self.MINV_GALVO, max_val=self.MAXV_GALVO)       
         return task_ao
-    
-
-    def _create_simple_do_task(self):
-        task_do = nidaqmx.Task("DO")
-        if self.channels[0]:
-            task_do.do_channels.add_do_chan(self.do0)       # 488
-        if self.channels[1]:
-            task_do.do_channels.add_do_chan(self.do1)       # 561
-        if self.channels[2]:
-            task_do.do_channels.add_do_chan(self.do1)       # LED  
-        
-        return task_do
 
 
     def _get_ao_galvo_data(self):
         """Get the array data to write to the ao channel"""
-        # we have a number of z steps and we start the scanning with the first line, but how do we know that it's hitting the sensor?
         # continuous sawtooth requires more samples than frames_per_stack  - could refine more how this is related to z step
         return np.linspace(self.volt_per_z*self.z_start, self.volt_per_z*self.z_end, self.samples_per_stack)
 
@@ -242,18 +246,24 @@ class nidaq:
         
         return analog_output_signal
     
-    def _get_do_data(self):
-        """Get the array data to write to the do channel"""
-        
-        return [True] * self.samples_per_stack
-        
-
-    # TODO: revise the AOTF function - what would it need to sync with?
-    # NOTE: currently there is a hardware trigger, keep it that way?
+    
+    def _create_led_do_task(self):
+        task_do = nidaqmx.Task("LED")
+        task_do.do_channels.add_do_chan(self.do0)       # LED
+        return task_do
+    
+    
+    # This function can be extended to alternate more LED channels
+    def _get_do_led_data(self):
+        """Get the array data to write to the do channel for LED for software trigger"""
+        data = [True] * int(self.samples_per_stack * self.led_fraction_on) + [False] * int(self.samples_per_stack * (1 - self.led_fraction_on))
+        data[:-3] = False     # guarantee LED ends off
+        return data
         
 # ------------------------------ TRIGGERS  ------------------------------- #
 
-    # could technically use the cam_exposure_trigger, but this could only give step-like sweeping
+    # TODO: how to destroy all resources used so they don't overlap and get stuck?
+
     # NOTE: discussions have been around the lack of core timing - this would provide that 
     def _stack_trigger(self):
         """generate rising edge trigger for each stack or frame"""    
@@ -268,11 +278,15 @@ class nidaq:
     def _cam_exposure_trigger(self):
         """generate TTL pulse train for parallel cam trigger"""
         task_ctr = nidaqmx.Task("cam_trigger")
-        # duty cycle < 1.0 means the real exposure time is even less than input with rising delay
+        # duty cycle < 1.0 means the real exposure time is slightly less than input with rising delay
         task_ctr.co_channels.add_co_pulse_chan_freq(self.ctr1, idle_state=nidaqmx.constants.Level.LOW, freq=self._get_trigger_exp_freq(), duty_cycle=self.duty_cycle)
         # use the internal clock of the device
         if self.multi_d:
-            task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.frames_per_stack)
+            if self.stack_delay_time == 0:
+                task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.frames_per_stack)
+            else:
+                # finite mode is able to finish with a delay between stacks
+                task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.frames_per_stack)
         else:
             task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=1)
         # trigger is activated when ctr0 goes up
@@ -280,17 +294,25 @@ class nidaq:
         task_ctr.triggers.start_trigger.retriggerable = True
 
         return task_ctr
+    
+    
+    def setup_triggered_task(self, task, data_task):
+        """Setup task to be re-triggerable by ctr0"""
+        # rate and number of samples stop it before delay (idle time)
+        task.timing.cfg_samp_clk_timing(rate=self.stack_sampling_rate, sample_mode=nidaqmx.constants.AcquisitionType.FINITE, 
+                                            samps_per_chan= self.samples_per_stack)
+        # set start trigger
+        task.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source=self.ctr0_internal, trigger_edge=nidaqmx.constants.Edge.RISING)
+        # retriggerable between stacks
+        task.triggers.start_trigger.retriggerable = True
+        # start and wait for stack trigger
+        task.write(data_task, auto_start=False)
+        task.start()
+        
 
 # -------------------------------- MAIN ---------------------------------- #
 
     def acquire(self):
-        # get light source control
-        # task_light = self._create_do_task()
-        # data_light = self._get_do_data()
-        
-        # TODO: incorporate stack_delay_time in this logic (prob delay to stack_trigger)
-        # TODO: determine if we want to more precisely control exposure via duty cycle (seems the best, otherwise we
-        #      have to introduce a delay between frames - actually this is close to what i have)
 
         # master trigger
         stack_ctr = self._stack_trigger()
@@ -299,19 +321,14 @@ class nidaq:
         if self.multi_d:
             task_galvo = self._create_ao_task()
             data_galvo = self._get_ao_galvo_data()
-            # cannot put src_galvo as src bc then it would sample at the rate of galvo triggers
-            task_galvo.timing.cfg_samp_clk_timing(rate=self.stack_sampling_rate, sample_mode=nidaqmx.constants.AcquisitionType.FINITE, 
-                                                samps_per_chan= self.samples_per_stack)
-            # set start trigger
-            task_galvo.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source=self.ctr0_internal, trigger_edge=nidaqmx.constants.Edge.RISING)
-            # retriggerable between stacks
-            task_galvo.triggers.start_trigger.retriggerable = True
-            # start and wait for stack trigger
-            task_galvo.write(data_galvo, auto_start=False)
-            task_galvo.start()
-        
-        # task_aotf = self._create_ao_task()
-        # data_aotf = self._get_ao_aotf_data()
+            self.setup_triggered_task(task_galvo, data_galvo)
+            
+        # LED control
+        if self.led_trigger == "software":
+            # same timing setup as galvo
+            task_led = self._create_led_do_task()
+            data_led = self._get_do_led_data()
+            self.setup_triggered_task(task_led, data_led)
         
         # camera pulse train
         exp_ctr = self._cam_exposure_trigger()
@@ -327,10 +344,14 @@ class nidaq:
         exp_ctr.stop()
         if self.multi_d:
             task_galvo.stop()
+        if self.led_trigger == "software":
+            task_led.stop()
             
         # close tasks
         stack_ctr.close()
         exp_ctr.close()
         if self.multi_d:
             task_galvo.close()
+        if self.led_trigger == "software":
+            task_led.close()
 

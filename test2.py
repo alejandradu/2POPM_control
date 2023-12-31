@@ -5,8 +5,8 @@ import nidaqmx
 
 nidaq = MAIN2.NIDAQ(
             num_stacks = 10,                # number of 3D stacks if multi d, number of frames if not
-            stack_delay_time = 0.0,        # ms. time between acquiring any 2 stacks
-            exposure_time = 100,           # ms. effective exposure will be less due to system delay
+            stack_delay_time = 0.0,        # s. time between acquiring any 2 stacks
+            exposure_time = 100e-3,           # s. effective exposure will be less due to system delay
             readout_mode = "fast",              # camera readout mode "fast" or "slow"
             lightsheet = False,               # lightsheet mode
             multi_d = False,                  # multidimensional acquisition
