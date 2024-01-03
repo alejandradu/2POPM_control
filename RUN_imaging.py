@@ -1,6 +1,6 @@
 import MAIN2
 
-nidaq = MAIN2.NIDAQ(
+nidaq = MAIN2.nidaq(
             num_stacks = 10,                # number of 3D stacks if multi d, number of frames if not
             stack_delay_time = 0.0,        # s. time between acquiring any 2 stacks
             exposure_time = 100e-3,           # s. effective exposure will be less due to system delay
@@ -15,8 +15,8 @@ nidaq = MAIN2.NIDAQ(
             frame_delay_time = 0.0,         # ms. optional delay after each frame trigger
             samples_per_exp = 10,           # sampling to write data for each cam exposure >= 2 by nyquist thm.
             samples_per_stack = 100,         # sampling to write data for each stack
-            rf_freq = 1e6)                   # RF frequency of AOTF
+            rf_freq = 1e6,                   # RF frequency of AOTF
+            led_fraction_on = 1.0,          # percent of time LED is on during acquisition for software triggering
+            led_trigger = "software")       # "hardware" or "software" triggering of LED if light control is desired
 
 nidaq.acquire()
-
-# IMPLEMENT DELAY BETWEEN DIFFERENT STACKS

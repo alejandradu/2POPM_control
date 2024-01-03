@@ -5,6 +5,8 @@ import time
 import pco   
 import warnings
 import PyQt6
+import matplotlib.pyplot as plt
+import scipy
 
 # Create a workflow using the NI-DAQmx Python API to synchronize the 
 # acquisition of a camera with the generation of an analog signal to control a 
@@ -113,9 +115,6 @@ class nidaq:
         else:
             raise ValueError("Invalid LED trigger mode")
         
-        if self.multi_d:
-            print("Stage (galvo) control enabled. Verify MicroManager NIDAQHub control is disabled.")
-                    
         # assign user inputs
         self.num_stacks = num_stacks
         self.stack_delay_time = stack_delay_time
@@ -137,7 +136,10 @@ class nidaq:
         
         # conversion from z to galvo voltage according to experimental calibration
         self.volt_per_z = 5 / 178.36
-
+        
+        if self.multi_d:
+            print("Stage (galvo) control enabled. Verify MicroManager NIDAQHub control is disabled.")
+                    
 
     @property
     def frames_per_stack(self):
@@ -258,7 +260,10 @@ class nidaq:
         """Get the array data to write to the do channel for LED for software trigger"""
         data = [True] * int(self.samples_per_stack * self.led_fraction_on) + [False] * int(self.samples_per_stack * (1 - self.led_fraction_on))
         data[:-3] = False     # guarantee LED ends off
+        
         return data
+    
+    # TODO: other data with modulation mode read docs only to adjust intensity
         
 # ------------------------------ TRIGGERS  ------------------------------- #
 
@@ -309,6 +314,15 @@ class nidaq:
         task.write(data_task, auto_start=False)
         task.start()
         
+        
+# ------------------------------ GRAPHING -------------------------------- #
+
+    def plot_pulse_train(self, n_cycles=1):
+        
+        t = np.linspace(-0.01, n_cycles*self.get_stack_time(), n_cycles*500, endpoint=False)
+        plt.plot(t, 2.5*(1+scipy.signal.square(3*2*np.pi*t*n_cycles, 0.2)))
+        plt.ylim(-1, 6)
+        plt.show()
 
 # -------------------------------- MAIN ---------------------------------- #
 
