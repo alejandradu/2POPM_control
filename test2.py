@@ -2,6 +2,8 @@ import MAIN2
 import pco
 import time
 import nidaqmx
+import math
+import numpy as np
 
 nidaq = MAIN2.nidaq(
             num_stacks = 10,                # number of 3D stacks if multi d, number of frames if not
@@ -19,7 +21,9 @@ nidaq = MAIN2.nidaq(
             samples_per_exp = 10,           # sampling to write data for each cam exposure >= 2 by nyquist thm.
             samples_per_stack = 100,         # sampling to write data for each stack
             rf_freq = 1e6,                   # RF frequency of AOTF
-            duty_cycle=0.5)                
+            duty_cycle=0.5,
+            led_control_mode = "Trigger",  # "trigger" or "modulation"
+            led_trigger_func = lambda x: math.sin(4*np.pi*x)**2)        # function of time for the stack acquisition      
 
 
 # # 1. Tets params for not multi_d (stack time = frame time or exposure time)
@@ -86,3 +90,4 @@ nidaq = MAIN2.nidaq(
 # 5. Test all
 # connect first channel of oscilloscope to ctr1 output (blue is ctr1 now)
 nidaq.acquire()
+
