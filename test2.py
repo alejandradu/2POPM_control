@@ -1,4 +1,4 @@
-import MAIN2
+import new_main_compare
 import pco
 import time
 import nidaqmx
