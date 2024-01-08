@@ -106,7 +106,7 @@ class GalvoDriver(QWidget):
         self.createTask()
         self.hide()
     def createTask(self):
-        self.analog_output = Task()
+        self.analog_output = Task()  # this is from the wildcard import from PyDAQmx
         self.analog_output.CreateAOVoltageChan("Dev2/ao2","",-10.0,10.0,DAQmx_Val_Volts,None) #On the NI PCI-6733, ao2 is pin 57 and ground is 56
         self.analog_output.CreateAOVoltageChan("Dev2/ao3","",-10.0,10.0,DAQmx_Val_Volts,None) #On the NI PCI-6733, ao3 is pin 25 and ground is 24
         self.analog_output.CreateAOVoltageChan("Dev2/ao4","",-10.0,10.0,DAQmx_Val_Volts,None) #On the NI PCI-6733, ao4 is pin 60 and ground is 59
