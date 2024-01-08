@@ -7,6 +7,7 @@ import warnings
 import PyQt6
 import matplotlib.pyplot as plt
 import scipy
+import math
 
 # Create a workflow using the NI-DAQmx Python API to synchronize the 
 # acquisition of a camera with the generation of an analog signal to control a 
@@ -65,7 +66,7 @@ class nidaq:
             stack_delay_time: float,        # s. time between acquiring any 2 stacks - TODO: match name in mm
             exposure_time: float,           # s. effective exposure will be less due to system delay
             readout_mode: str,              # camera readout mode "fast" or "slow"
-            lightsheet: bool,               # lightsheet mode
+            #lightsheet: bool,               # lightsheet mode
             multi_d: bool,                  # multidimensional acquisition
             z_start = 0.0,                  # microm. start of z stack. min -178.36 
             z_end = 0.0,                    # microm. end of z stack. max 178.36 
@@ -76,9 +77,10 @@ class nidaq:
             samples_per_exp = 10,           # sampling to write data for each cam exposure >= 2 by nyquist thm.
             samples_per_stack = 10,         # sampling to write data for each stack
             rf_freq = 1e6,                  # RF frequency of AOTF
-            channels = [True, True, True],  # laser channels to turn on during acquisition (variable length) [488, 561, LED]
-            led_fraction_on = 1.0,          # percent of time LED is on during acquisition for software triggering
-            led_trigger = None):            # "hardware" or "software" triggering of LED if light control is desired
+            led_stack_fraction_on = 1.0,    # percent of time LED is on during every stack acquisition in software_fraction mode
+            led_trigger = None,             # "hardware", "software_fraction", "software_time" triggering of LED if light control is desired
+            led_time_on = 0.0,              # s. time LED is on during acquisition in software_time mode (i.e. LED period)
+            led_frequency = 0):             # pulses/second. Nonzero to pulse the LED for led_time_on at given frequency
         
         if (exposure_time < self.MIN_EXP or exposure_time > self.MAX_EXP):
             raise ValueError("Exposure time is not between 100e-6 and 10.0 sec")
@@ -108,7 +110,7 @@ class nidaq:
         
         if led_trigger == "hardware":
             print("LED hardware trigger selected. Verify BNC cable connects Cam Exp Out to LED In")
-        elif led_trigger == "software":
+        elif led_trigger == "software_fraction" or led_trigger == "software_time":
             print("LED software trigger selected. Verify BNC cable connects USER1 OUT to LED In")
         elif led_trigger is None:
             print("No LED light control selected.")
@@ -120,7 +122,7 @@ class nidaq:
         self.stack_delay_time = stack_delay_time
         self.exposure_time = exposure_time
         self.readout_mode = readout_mode
-        self.lightsheet = lightsheet
+        #self.lightsheet = lightsheet
         self.multi_d = multi_d
         self.image_height = image_height
         self.image_width = image_width
@@ -131,8 +133,10 @@ class nidaq:
         self.samples_per_exp = samples_per_exp
         self.samples_per_stack = samples_per_stack
         self.rf_freq = rf_freq
-        self.led_fraction_on = led_fraction_on
+        self.led_fraction_on = led_stack_fraction_on
         self.led_trigger = led_trigger
+        self.led_time_on = led_time_on
+        self.led_frequency = led_frequency
         
         # conversion from z to galvo voltage according to experimental calibration
         self.volt_per_z = 5 / 178.36
@@ -151,10 +155,10 @@ class nidaq:
 
     def _get_frame_time(self):
         """Get frame readout time: min time between camera triggers"""
-        if not self.lightsheet:
-            return self.image_height * self.line_time / 2
-        else:
-            return self.image_height * self.line_time
+        #if not self.lightsheet:
+        #    return self.image_height * self.line_time / 2
+        #else:
+        return self.image_height * self.line_time
         
         
     def _get_trigger_exp_freq(self):
@@ -197,6 +201,12 @@ class nidaq:
     def stack_sampling_rate(self):
         """Get sampling rate of output to write for each stack without delay time"""
         return self.samples_per_stack / (self.get_stack_time() - self.stack_delay_time)
+    
+    
+    @property
+    def stack_sampling_rate_delay(self):
+        """Get sampling rate of output to write for each stack with delay time"""
+        return self.samples_per_stack / self.get_stack_time()
     
 
     def get_total_acq_time(self):
@@ -256,14 +266,24 @@ class nidaq:
     
     
     # This function can be extended to alternate more LED channels
-    def _get_do_led_data(self):
+    def _get_do_led_data_trigger(self):
         """Get the array data to write to the do channel for LED for software trigger"""
         data = [True] * int(self.samples_per_stack * self.led_fraction_on) + [False] * int(self.samples_per_stack * (1 - self.led_fraction_on))
-        data[:-3] = False     # guarantee LED ends off
+        data[-3:] = [False]*3     # guarantee LED ends off
         
         return data
     
-    # TODO: other data with modulation mode read docs only to adjust intensity
+    
+    def _get_do_led_data_no_trigger(self):
+        tot_samples = self.samples_per_stack * self.num_stacks
+        time_off = 1/self.led_frequency - self.led_time_on
+        led_samples_on = int(self.led_time_on * tot_samples / self.get_total_acq_time())
+        led_samples_off = int(time_off * tot_samples / self.get_total_acq_time())
+        n = math.ceil(tot_samples / (led_samples_off + led_samples_on))
+        data = n * ([True] * led_samples_on + [False] * led_samples_off)
+        data = data[:tot_samples]
+        data[-3:] = [False]*3   # guarantee LED ends off
+        return data
         
 # ------------------------------ TRIGGERS  ------------------------------- #
 
@@ -314,19 +334,62 @@ class nidaq:
         task.write(data_task, auto_start=False)
         task.start()
         
+    def setup_not_triggered_task(self, task, data_task):
+        """Setup task to take a single trigger by ctr0. Sampling rate does include stack delay"""
+        # rate and number of samples stop it before delay (idle time)
+        task.timing.cfg_samp_clk_timing(rate=self.stack_sampling_rate_delay, sample_mode=nidaqmx.constants.AcquisitionType.FINITE, 
+                                            samps_per_chan= self.samples_per_stack*self.num_stacks)
+        # set start trigger
+        task.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source=self.ctr0_internal, trigger_edge=nidaqmx.constants.Edge.RISING)
+        # retriggerable between stacks
+        task.triggers.start_trigger.retriggerable = False
+        # start and wait for stack trigger
+        task.write(data_task, auto_start=False)
+        task.start()
+        
         
 # ------------------------------ GRAPHING -------------------------------- #
 
-    def plot_pulse_train(self, n_cycles=1):
+    def plot_preview(self, n_cycles=1):
         
-        t = np.linspace(-0.01, n_cycles*self.get_stack_time(), n_cycles*500, endpoint=False)
-        plt.plot(t, 2.5*(1+scipy.signal.square(3*2*np.pi*t*n_cycles, 0.2)))
+        t = np.linspace(0.0, n_cycles * self.get_stack_time(), n_cycles * 500, endpoint=False)
+        one_t = np.linspace(0.0, self.frames_per_stack / self._get_trigger_exp_freq(), 500, endpoint=False)
+        stack_pulse = 2.5 * (1 + scipy.signal.square(2 * np.pi * t / self.get_stack_time(), 0.2))
+        exp_pulse_on = 3.3/2 * (1 + scipy.signal.square(2 * np.pi * one_t * self._get_trigger_exp_freq(), self.duty_cycle))
+        
+        
+        plt.figure(figsize=(10, 5))  # Set the figure size to create a big rectangle
+        
+        
+        # Plot the pulse train
+        plt.plot(t, stack_pulse)
+        #plt.plot(t, exp_pulse)
+        plt.xlabel('Time (s)')
+        plt.ylabel('Voltage (V)')
         plt.ylim(-1, 6)
+        if self.multi_d:
+            plt.title("3D acquisition")
+        else:
+            plt.title("2D acquisition")
+
+        # Add text box with information
+        word = "stacks" if self.multi_d else "frames"
+        word1 = "Stack" if self.multi_d else "Frame"
+        if self.exposure_time < self._get_frame_time():
+            effective_exp = 1 / self._get_frame_time()
+        else:
+            effective_exp = self.exposure_time
+        text = f"{word1} Time: {self.get_stack_time()}\nTotal Acquisition Time: {self.get_total_acq_time()}\nDelay between {word}: {self.stack_delay_time}\nExposure Time: {effective_exp}"
+        plt.text(0.05, 0.95, text, transform=plt.gca().transAxes, fontsize=12, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
+
         plt.show()
 
 # -------------------------------- MAIN ---------------------------------- #
 
     def acquire(self):
+        
+        if self.led_time_on > self.get_total_acq_time():
+            raise ValueError("LED time on is greater than total acquisition time")
 
         # master trigger
         stack_ctr = self._stack_trigger()
@@ -338,11 +401,17 @@ class nidaq:
             self.setup_triggered_task(task_galvo, data_galvo)
             
         # LED control
-        if self.led_trigger == "software":
+        if self.led_trigger == "software_fraction":
             # same timing setup as galvo
             task_led = self._create_led_do_task()
-            data_led = self._get_do_led_data()
+            data_led = self._get_do_led_data_trigger()
+            # sample at rate without delay
             self.setup_triggered_task(task_led, data_led)
+        elif self.led_trigger == "software_time":
+            task_led = self._create_led_do_task()
+            data_led = self._get_do_led_data_no_trigger()
+            # sample at rate with (if any) stack delay
+            self.setup_not_triggered_task(task_led, data_led)
         
         # camera pulse train
         exp_ctr = self._cam_exposure_trigger()
@@ -358,7 +427,7 @@ class nidaq:
         exp_ctr.stop()
         if self.multi_d:
             task_galvo.stop()
-        if self.led_trigger == "software":
+        if self.led_trigger == "software_time" or self.led_trigger == "software_fraction":
             task_led.stop()
             
         # close tasks
@@ -366,6 +435,6 @@ class nidaq:
         exp_ctr.close()
         if self.multi_d:
             task_galvo.close()
-        if self.led_trigger == "software":
+        if self.led_trigger == "software_time" or self.led_trigger == "software_fraction":
             task_led.close()
 
