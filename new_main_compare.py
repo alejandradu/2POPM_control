@@ -75,7 +75,7 @@ class nidaq:
             image_width = MAX_WIDTH,        # px. horizontal ROI
             frame_delay_time = 0.0,         # s. optional delay after each frame trigger
             samples_per_exp = 10,           # sampling to write data for each cam exposure >= 2 by nyquist thm.
-            samples_per_stack = 10,         # sampling to write data for each stack
+            samples_per_stack = 100,         # sampling to write data for each stack
             rf_freq = 1e6,                  # RF frequency of AOTF
             led_stack_fraction_on = 1.0,    # percent of time LED is on during every stack acquisition in software_fraction mode
             led_trigger = None,             # "hardware", "software_fraction", "software_time" triggering of LED if light control is desired
@@ -139,7 +139,7 @@ class nidaq:
         self.led_frequency = led_frequency
         
         # conversion from z to galvo voltage according to experimental calibration
-        self.volt_per_z = 5 / 178.36
+        self.volt_per_z = 5 / (178.36)
         
         if self.multi_d:
             print("Stage (galvo) control enabled. Verify MicroManager NIDAQHub control is disabled.")
