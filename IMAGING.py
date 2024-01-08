@@ -1,4 +1,4 @@
-import MAIN2
+import new_main_compare
 import pco
 import time
 
@@ -88,8 +88,6 @@ import time
 
 # -------------------------- 1 camera imaging ----------------------------------- #
 
-# In the camera to be inactivated, disconnect the BNC cable from the IN 1 port
-
 # In Micro-Manager, set:
 #    Core Cam -> pco_camera_1 or pco_camera_2 (whichever still has the BNC cable connected to IN 1)
 #    Multicam 1  -> pco_camera_1
@@ -114,21 +112,21 @@ import time
 
 # ----------------------------- modify below ------------------------------------ #
 
-scope = MAIN2.nidaq(num_stacks = 10,                      # number of 3D stacks if multi_d, number of frames otherwise
-                               stack_delay_time = 1.0,               # sec. time between acquiring any 2 stacks
+scope = new_main_compare.nidaq(num_stacks = 2,                      # number of 3D stacks if multi_d, number of frames otherwise
+                               stack_delay_time = 0,               # sec. time between acquiring any 2 stacks
                                exposure_time = 100e-3,               # sec. camera exposure time. min 100e-6 max 10.0
                                readout_mode = "fast",                # camera readout mode "fast" or "slow". Default to "fast"
                                multi_d = True,                       # multidimensional acquisition
-                               z_start = 0.0,                        # microm. start of z stack. min -178.36 
-                               z_end = 100.0,                        # microm. end of z stack. max 178.36 
-                               num_z_slices = 10,                    # int. number of z slices
-                               image_height = 248,                   # px. vertical ROI. Defines frame readout time
-                               image_width = 800,                    # px. horizontal ROI
+                               z_start = -60,                        # microm. start of z stack. min -178.36 
+                               z_end = 60.0,                        # microm. end of z stack. max 178.36 
+                               num_z_slices = 120,                    # int. number of z slices
+                               image_height = 242,                   # px. vertical ROI. Defines frame readout time
+                               image_width = 2060,                    # px. horizontal ROI
                                frame_delay_time = 0.0,               # sec. optional delay after taking each frame
                                led_trigger = "software_time",        # "hardware", "software_fraction", "software_time" triggering of LED if light control is desired
                                led_stack_fraction_on = 0.5,          # percent of time LED is on during every stack acquisition in software_fraction mode
-                               led_time_on = 1.0,                    # sec. time LED is on during acquisition in software_time mode (i.e. LED period)
-                               led_frequency = 0.5)                  # pulses/second. Nonzero to pulse the LED for led_time_on at given frequency
+                               led_time_on = 1,                    # sec. time LED is on during acquisition in software_time mode (i.e. LED period)
+                               led_frequency = 1/3)                  # pulses/second. Nonzero to pulse the LED for led_time_on at given frequency
 
 
 # -------------------------- do not modify below --------------------------------- #
@@ -139,6 +137,5 @@ print("Frame rate (frames/s): ", scope._get_trigger_exp_freq())
 print("Volumes per second: ", 1/scope.get_stack_time())
 
 # Start acquisition
-#scope.acquire()
+scope.acquire()
 
-print(scope._get_do_led_data_no_trigger())
