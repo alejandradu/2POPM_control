@@ -1,6 +1,4 @@
-import new_main_compare
-import pco
-import time
+import control_2popm
 
 # -------------------------- Instructions ----------------------------------- #
 
@@ -29,7 +27,10 @@ import time
 # 5. Set exposure time, image height, and image width to the desired values
 # 6. Set the readout mode as "fast" unless you particularly need the camera sensor to read out in slow mode
 
-# 7. Open Micro-Manager and set: 
+# 7. Run this script. A window will pop up. If the timing parameters are incorrect,
+#    click "Cancel" and modify the parameters above in the script.
+
+# 8. Open Micro-Manager and set: 
 #    Core Cam -> Multi Camera
 #    Multicam 1  -> pco_camera_1
 #    Multicam 1 (trigger mode)  -> External Exp. Ctrl.
@@ -37,15 +38,15 @@ import time
 #    Multicam 2 (trigger mode)  -> External Exp. Ctrl.
 #    NIDAQ (sequence)  ->  Off
 
-# 8. In Micro-Manager, open "Multi-D Acq":
+# 9. In Micro-Manager, open "Multi-D Acq":
 #    Check "Time Points" and uncheck all other boxes
-#    Under "Time Points", set "Counts" to the number of frames desired (num_stacks) + 1
+#    Under "Time Points", set "Counts" to the value of Total number of time points shown in the pop up window
 #    Under "Time Points", set "Interval" to the delay between frames (stack_delay_time), if any
 #    Check that the time units is seconds (s)
 
-# 9. In Micro-Manager, click "Acquire!"
+# 10. In Micro-Manager, click "Acquire!"
 
-# 10. Right after, run this script with the run button in the top right corner
+# 11. Right after, click "OK" in the pop up window
 
 
 
@@ -56,7 +57,7 @@ import time
 # 1. Set multi_d = True
 # 2. Set num_stacks to the number of volumes (3D stacks) desired
 # 3. Set stack_delay_time to the desired delay (interval) between 3D stacks
-# 4. Set z_start and z_end to the desired start and end of the z stack, and num_z_slices to the number of z slices
+# 4. Set z_start and z_end to the desired start and end of the z stack, and z_step
 # 5. Set frame_delay_time to the desired delay between z slices, if any
 # 6. Set any LED control if desired. If using "software_fraction", led_stack_fraction 
 #    is the fraction of time the LED is on during each 3D stack. If using "software_time",
@@ -64,7 +65,10 @@ import time
 # 7. Set exposure time, image height, and image width to the desired values
 # 8. Set the readout mode as "fast" unless you particularly need the camera sensor to read out in slow mode
 
-# 9. Open Micro-Manager and set: 
+# 9. Run this script. A window will pop up. If the timing parameters are incorrect,
+#    click "Cancel" and modify the parameters above in the script.
+
+# 10. Open Micro-Manager and set: 
 #    Core Cam -> Multi Camera
 #    Multicam 1  -> pco_camera_1
 #    Multicam 1 (trigger mode)  -> External Exp. Ctrl.
@@ -72,15 +76,15 @@ import time
 #    Multicam 2 (trigger mode)  -> External Exp. Ctrl.
 #    NIDAQ (sequence)  ->  Off
 
-# 10. In Micro-Manager, open "Multi-D Acq":
-#     Check "Time Points" and uncheck all other boxes
-#     Under "Time Points", set "Counts" to num_stacks * num_z_slices (total number of frames)
-#     Under "Time Points", set "Interval" to zero
-#     Check that the time units is seconds (s)
+# 11. In Micro-Manager, open "Multi-D Acq":
+#    Check "Time Points" and uncheck all other boxes
+#    Under "Time Points", set "Counts" to the value of Total number of time points shown in the pop up window
+#    Under "Time Points", set "Interval" to the delay between frames (stack_delay_time), if any
+#    Check that the time units is seconds (s)
 
-# 11. In Micro-Manager, click "Acquire!"
+# 12. In Micro-Manager, click "Acquire!"
 
-# 12. Right after, run this script with the run button in the top right corner
+# 13. Right after, click "OK" in the pop up window
 
 # Important: for now, long interval times between stacks might not work with the Micro-Manager viewer
 
@@ -89,7 +93,7 @@ import time
 # -------------------------- 1 camera imaging ----------------------------------- #
 
 # In Micro-Manager, set:
-#    Core Cam -> pco_camera_1 or pco_camera_2 (whichever still has the BNC cable connected to IN 1)
+#    Core Cam -> pco_camera_1 or pco_camera_2 
 #    Multicam 1  -> pco_camera_1
 #    Multicam 1 (trigger mode)  -> External Exp. Ctrl.
 #    NIDAQ (sequence)  ->  Off
@@ -112,30 +116,23 @@ import time
 
 # ----------------------------- modify below ------------------------------------ #
 
-scope = new_main_compare.nidaq(num_stacks = 2,                      # number of 3D stacks if multi_d, number of frames otherwise
-                               stack_delay_time = 0,               # sec. time between acquiring any 2 stacks
-                               exposure_time = 100e-3,               # sec. camera exposure time. min 100e-6 max 10.0
-                               readout_mode = "fast",                # camera readout mode "fast" or "slow". Default to "fast"
-                               multi_d = True,                       # multidimensional acquisition
-                               z_start = -60,                        # microm. start of z stack. min -178.36 
-                               z_end = 60.0,                        # microm. end of z stack. max 178.36 
-                               num_z_slices = 120,                    # int. number of z slices
-                               image_height = 242,                   # px. vertical ROI. Defines frame readout time
-                               image_width = 2060,                    # px. horizontal ROI
-                               frame_delay_time = 0.0,               # sec. optional delay after taking each frame
-                               led_trigger = "software_time",        # "hardware", "software_fraction", "software_time" triggering of LED if light control is desired
-                               led_stack_fraction_on = 0.5,          # percent of time LED is on during every stack acquisition in software_fraction mode
-                               led_time_on = 1,                    # sec. time LED is on during acquisition in software_time mode (i.e. LED period)
-                               led_frequency = 1/3)                  # pulses/second. Nonzero to pulse the LED for led_time_on at given frequency
-
+scope =  control_2popm.nidaq(num_stacks = 1,                # number of 3D stacks if multi d, number of frames if not
+                             stack_delay_time = 0,          # s. time between acquiring any 2 stacks 
+                             exposure_time = 100e-3,        # s. effective exposure will be less due to system delay
+                             readout_mode = "fast",         # camera readout mode "fast" or "slow"
+                             multi_d = True,                # multidimensional acquisition
+                             z_start = -100.0,              # microm. start of z stack. min -178.36 
+                             z_end = 100.0,                 # microm. end of z stack. max 178.36 
+                             z_step = 1.0,                  # microm. Step size of galvo scanning
+                             image_height = 242,            # px. vertical ROI. Defines frame readout time
+                             image_width = 2060,            # px. horizontal ROI
+                             frame_delay_time = 0.0,        # s. optional delay after each frame trigger
+                             led_stack_fraction_on = 0.5,   # percent of time LED is on during every stack acquisition in software_fraction mode
+                             led_trigger = "software_time", # "hardware", "software_fraction", "software_time" triggering of LED if light control is desired
+                             led_time_on = 1,               # s. time LED is on during acquisition in software_time mode (i.e. LED period)
+                             led_frequency = 1/3)           # pulses/second. Nonzero to pulse the LED for led_time_on at given frequency
 
 # -------------------------- do not modify below --------------------------------- #
 
-# Get parameters
-print("Total acquisition time (s): ", scope.get_total_acq_time())
-print("Frame rate (frames/s): ", scope._get_trigger_exp_freq())
-print("Volumes per second: ", 1/scope.get_stack_time())
-
-# Start acquisition
 scope.acquire()
 
