@@ -10,8 +10,7 @@ import math
 
 # Create a workflow using the NI-DAQmx Python API to synchronize the 
 # acquisition of a camera with the generation of an analog signal to control a 
-# galvo mirror and digital signals to control 2 lasers and drive
-# the RF frequency of an AOTF. 
+# galvo mirror and digital signals to control 2 lasers (LED)
 
 class nidaq:
     # Analog input/output only    

@@ -3,7 +3,7 @@ import numpy as np
 # Three spherical caps: 1 and 2 are centered on the z-axis, 3 is pi
 # radians wide
 cap_1_width = np.arcsin(1.49/1.51) # radians
-cap_2_width = np.arcsin(0.96)       # radians
+cap_2_width = np.arcsin(0.95)       # radians
 sheet_half_angle = 3 * np.pi/180    # radians
 cap_3_tilt = (np.pi/2 - cap_1_width) + sheet_half_angle # radians, in yz plane
 # Generate random points on the surface of a sphere

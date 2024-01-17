@@ -1,11 +1,11 @@
-import control_2popm
+import FastMC_core
 import pco
 import time
 import nidaqmx
 import math
 import numpy as np
 
-nidaq = control_2popm.nidaq(
+nidaq = FastMC_core.nidaq(
             num_stacks = 10,                # number of 3D stacks if multi d, number of frames if not
             stack_delay_time = 0.5,        # s. time between acquiring any 2 stacks
             exposure_time = 100e-3,           # s. effective exposure will be less due to system delay
