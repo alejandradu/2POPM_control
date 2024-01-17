@@ -260,7 +260,7 @@ class nidaq:
     
     def _get_do_led_data_no_trigger(self):
         """Get the array data to write to the do channel for LED time trigger mode"""
-        tot_samples = self.stack_sampling_rate_delay * self.get_total_acq_time()
+        tot_samples = int(self.stack_sampling_rate_delay * self.get_total_acq_time())
         time_off = 1/self.led_frequency - self.led_time_on
         led_samples_on = int(self.led_time_on * self.stack_sampling_rate_delay)
         led_samples_off = int(time_off * self.stack_sampling_rate_delay)
@@ -278,7 +278,8 @@ class nidaq:
         task_ctr = nidaqmx.Task("stack_trigger")
         task_ctr.co_channels.add_co_pulse_chan_freq(self.ctr0, idle_state=nidaqmx.constants.Level.LOW, 
                                                     freq=1/self.get_stack_time(), duty_cycle=0.2)
-        task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=self.num_stacks)
+        samps = self.num_stacks if self.num_stacks != 1 else 2
+        task_ctr.timing.cfg_implicit_timing(sample_mode=nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=samps)
         
         return task_ctr
         
@@ -321,8 +322,9 @@ class nidaq:
     def setup_not_triggered_task(self, task, data_task):
         """Setup task to take a single trigger by ctr0. Sampling rate does include stack delay"""
         # rate and number of samples stop it before delay (idle time)
+        samps = int(self.stack_sampling_rate_delay*self.get_total_acq_time())
         task.timing.cfg_samp_clk_timing(rate=self.stack_sampling_rate_delay, sample_mode=nidaqmx.constants.AcquisitionType.FINITE, 
-                                            samps_per_chan= self.stack_sampling_rate_delay*self.get_total_acq_time())
+                                            samps_per_chan= samps)
         # set start trigger
         task.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source=self.ctr0_internal, trigger_edge=nidaqmx.constants.Edge.RISING)
         # retriggerable between stacks
@@ -359,7 +361,11 @@ class nidaq:
     def print_parameters(self):
         root = tk.Tk()
         root.withdraw()
-        message = f"Total number of time points (input in Micro-Manager): \n{self.num_stacks*self.frames_per_stack}\n\nTotal acquisition time (s): \n{round(self.get_total_acq_time(),4)}"
+        if self.multi_d:
+            message = "Running 3D acquisition\n\n"
+        else:
+            message = "Running 2D acquisition\n\n"
+        message = message + f"Total number of time points (input in Micro-Manager): \n{self.num_stacks*self.frames_per_stack}\n\nTotal acquisition time (s): \n{round(self.get_total_acq_time(),4)}"
         if self.multi_d:
             message = message + f"\nVoumes per second: \n{round(1/self.get_stack_time(),3)}\nFrames per z-stack: \n{self.frames_per_stack}"
         else:
@@ -373,7 +379,7 @@ class nidaq:
 
     def acquire(self):
         
-        if self.led_time_on > self.get_total_acq_time():
+        if self.led_trigger == "software_time" and self.led_time_on > self.get_total_acq_time():
             raise ValueError("LED time on is greater than total acquisition time")
         
         ready = self.print_parameters()
@@ -409,7 +415,10 @@ class nidaq:
 
             # start stack or frame acquisition.
             stack_ctr.start()
-            stack_ctr.wait_until_done(self.get_total_acq_time())
+            if self.num_stacks == 1:
+                stack_ctr.wait_until_done(self.get_stack_time())
+            else:
+                stack_ctr.wait_until_done(self.get_total_acq_time())
             stack_ctr.stop()
 
             # stop tasks
