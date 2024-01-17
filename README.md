@@ -10,7 +10,7 @@ This repository contains all files required to run acquisition with the 2P-OPM a
 
 4. development : folder with past Python scripts used as scratch work.
 
-5. data_analysis : folder with the files and scripts used to generate the figures presented in the paper. 
+5. data_analysis : folder with the files and scripts used to generate the figures presented in the paper. (Note: to properly visualize 1p_2p_fluorescence.nb, it must be opened with Mathematica.)
 
 6. Daxi_Yang_et_al_resources : part of the repository https://github.com/royerlab/daxi . The files here were used as a starting point to build FastMC.
 
