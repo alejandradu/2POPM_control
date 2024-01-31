@@ -34,8 +34,8 @@ class nidaq:
     do2 = "Dev1/port0/line2"   # 561
 
     # galvo GVS011
-    MAXV_GALVO = 5.0  
-    MINV_GALVO = -5.0
+    MAXV_GALVO = 1.7  
+    MINV_GALVO = -1.7
     
     # AOTFnC-400.650-TN
     MIN_RF = 74e6         # Hz
@@ -66,8 +66,8 @@ class nidaq:
             exposure_time: float,           # s. effective exposure will be less due to system delay
             readout_mode: str,              # camera readout mode "fast" or "slow"
             multi_d: bool,                  # multidimensional acquisition
-            z_start = 0.0,                  # microm. start of z stack. min -178.36 
-            z_end = 0.0,                    # microm. end of z stack. max 178.36 
+            z_start = 0.0,                  # microm. start of z stack. min -200
+            z_end = 0.0,                    # microm. end of z stack. max 200
             z_step = 0.0,                   # microm. Step size of galvo scanning
             image_height = MAX_HEIGHT,      # px. vertical ROI. Defines frame readout time
             image_width = MAX_WIDTH,        # px. horizontal ROI
@@ -90,8 +90,8 @@ class nidaq:
             raise ValueError("Image width is not between 40 and 2060 pixels")
         if (z_end < z_start):
             raise ValueError("z_end is smaller than z_start")
-        if (z_end > 178.36 or z_start < -178.36):
-            raise ValueError("z_end and/or z_start are out of range [-178.36, 178.36]")
+        if (z_end > 200 or z_start < -200):
+            raise ValueError("z_end and/or z_start are out of range [-200, 200]")
         
         if readout_mode == "fast":
             self.line_time = self.LINE_TIME_FAST
@@ -132,7 +132,7 @@ class nidaq:
         self.led_frequency = led_frequency
         
         # conversion from z to galvo voltage according to experimental calibration
-        self.volt_per_z = 5 / (178.36)
+        self.volt_per_z = 1.7 / (200)
         
         if self.multi_d:
             print("Stage (galvo) control enabled. Verify MicroManager NIDAQHub control is disabled.")

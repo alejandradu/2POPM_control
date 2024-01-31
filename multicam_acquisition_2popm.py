@@ -116,18 +116,18 @@ import control_2popm
 
 # ----------------------------- modify below ------------------------------------ #
 
-scope =  control_2popm.nidaq(num_stacks = 1,                # number of 3D stacks if multi d, number of frames if not
+scope =  control_2popm.nidaq(num_stacks = 2,                # number of 3D stacks if multi d, number of frames if not; for single cam, double the stack size.
                              stack_delay_time = 0.0,          # s. time between acquiring any 2 stacks 
                              exposure_time = 100e-3,        # s. effective exposure will be less due to system delay
                              readout_mode = "fast",         # camera readout mode "fast" or "slow"
                              multi_d = True,                # multidimensional acquisition
-                             z_start = -10.0,              # microm. start of z stack. min -178.36 
-                             z_end = 10.0,                 # microm. end of z stack. max 178.36 
-                             z_step = 1.0,                  # microm. Step size of galvo scanning
-                             image_height = 242,            # px. vertical ROI. Defines frame readout time
+                             z_start = -50,              # microm. start of z stack. min -200
+                             z_end = 50,                 # microm. end of z stack. max 200
+                             z_step = 1,                  # microm. Step size of galvo scanning
+                             image_height = 470,            # px. vertical ROI. Defines frame readout time
                              image_width = 2060,            # px. horizontal ROI
                              frame_delay_time = 0.0,        # s. optional delay after each frame trigger
-                             led_stack_fraction_on = 0.5,   # percent of time LED is on during every stack acquisition in software_fraction mode
+                             led_stack_fraction_on = 0.9,   # percent of time LED is on during every stack acquisition in software_fraction mode
                              led_trigger = "hardware", # "hardware", "software_fraction", "software_time" triggering of LED if light control is desired
                              led_time_on = 1,               # s. time LED is on during acquisition in software_time mode (i.e. LED period)
                              led_frequency = 1/3)           # pulses/second. Nonzero to pulse the LED for led_time_on at given frequency
