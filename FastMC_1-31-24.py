@@ -116,7 +116,7 @@ import FastMC_core
 
 # ----------------------------- modify below ------------------------------------ #
 
-scope =  FastMC_core.nidaq(num_stacks = 5,                # number of 3D stacks if multi d, number of frames if not
+scope =  FastMC_core.nidaq(num_stacks = 2,                # number of 3D stacks if multi d, number of frames if not
                              stack_delay_time = 0.0,          # s. time between acquiring any 2 stacks 
                              exposure_time = 100e-3,        # s. effective exposure will be less due to system delay
                              readout_mode = "fast",         # camera readout mode "fast" or "slow"

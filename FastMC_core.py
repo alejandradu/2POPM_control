@@ -166,7 +166,7 @@ class nidaq:
     @property
     def duty_cycle(self):
         """Get duty cycle of exposure trigger"""
-        return 0.95 - self.frame_delay_time * self._get_trigger_exp_freq()
+        return 0.9 - self.frame_delay_time * self._get_trigger_exp_freq()
         
         
     @property
