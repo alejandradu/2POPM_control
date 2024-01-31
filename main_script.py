@@ -129,7 +129,7 @@ class nidaq:
         
         # conversion from z to galvo voltage
         # TODO: check is 175 microm +20v range? or 10?
-        self.volt_per_z = 5 / 178.36 # * self.SCALING_FACTOR
+        self.volt_per_z = 5 / 588.8625 # * self.SCALING_FACTOR (previously 178.36)
 
 
     @property
